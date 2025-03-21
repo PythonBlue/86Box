@@ -50,13 +50,15 @@ void
 SettingsSound::save()
 {
     for (uint8_t i = 0; i < SOUND_CARD_MAX; ++i) {
-        auto *cbox = findChild<QComboBox *>(QString("comboBoxSoundCard%1").arg(i + 1));
-        sound_card_current[i]         = cbox->currentData().toInt();
+        QComboBox *cbox       = findChild<QComboBox *>(QString("comboBoxSoundCard%1").arg(i + 1));
+        sound_card_current[i] = cbox->currentData().toInt();
     }
 
     midi_output_device_current = ui->comboBoxMidiOut->currentData().toInt();
-    midi_input_device_current  = ui->comboBoxMidiIn->currentData().toInt();
-    mpu401_standalone_enable   = ui->checkBoxMPU401->isChecked() ? 1 : 0;
+
+    midi_input_device_current = ui->comboBoxMidiIn->currentData().toInt();
+
+    mpu401_standalone_enable = ui->checkBoxMPU401->isChecked() ? 1 : 0;
 
     sound_is_float = ui->checkBoxFloat32->isChecked() ? 1 : 0;
 
@@ -67,38 +69,43 @@ SettingsSound::save()
 }
 
 void
-SettingsSound::onCurrentMachineChanged(int machineId)
+SettingsSound::onCurrentMachineChanged(const int machineId)
 {
     this->machineId = machineId;
 
-    int c           = 0;
-    int selectedRow = 0;
+    int c;
+    int selectedRow;
 
+    // Sound Card
     for (uint8_t i = 0; i < SOUND_CARD_MAX; ++i) {
-        auto *cbox       = findChild<QComboBox *>(QString("comboBoxSoundCard%1").arg(i + 1));
-        auto *model      = cbox->model();
-        auto  removeRows = model->rowCount();
-        c                = 0;
-        selectedRow      = 0;
+        QComboBox *cbox = findChild<QComboBox *>(QString("comboBoxSoundCard%1").arg(i + 1));
+        c               = 0;
+        auto model      = cbox->model();
+        auto removeRows = model->rowCount();
+        selectedRow     = 0;
 
         while (true) {
-            /* Skip "internal" if machine doesn't have it. */
-            if ((c == 1) && (machine_has_flags(machineId, MACHINE_SOUND) == 0)) {
+            /* Skip "internal" if machine doesn't have it or this is not the primary card. */
+            if ((c == 1) && ((i > 0) || (machine_has_flags(machineId, MACHINE_SOUND) == 0))) {
                 c++;
                 continue;
             }
 
-            auto name = DeviceConfig::DeviceName(sound_card_getdevice(c), sound_card_get_internal_name(c), 1);
+            const QString name = DeviceConfig::DeviceName(sound_card_getdevice(c), sound_card_get_internal_name(c), 1);
             if (name.isEmpty()) {
                 break;
             }
 
-            if (sound_card_available(c) && device_is_valid(sound_card_getdevice(c), machineId)) {
-                int row = Models::AddEntry(model, name, c);
-                if (c == sound_card_current[i]) {
-                    selectedRow = row - removeRows;
+            if (sound_card_available(c)) {
+                const device_t *sound_dev = sound_card_getdevice(c);
+                if (device_is_valid(sound_dev, machineId)) {
+                    int row = Models::AddEntry(model, name, c);
+                    if (c == sound_card_current[i]) {
+                        selectedRow = row - removeRows;
+                    }
                 }
             }
+
             c++;
         }
 
@@ -108,12 +115,14 @@ SettingsSound::onCurrentMachineChanged(int machineId)
         cbox->setCurrentIndex(selectedRow);
     }
 
-    auto model       = ui->comboBoxMidiOut->model();
-    auto removeRows  = model->rowCount();
-    c           = 0;
-    selectedRow = 0;
+    // Midi Out
+    c               = 0;
+    auto model      = ui->comboBoxMidiOut->model();
+    auto removeRows = model->rowCount();
+    selectedRow     = 0;
+
     while (true) {
-        QString name = DeviceConfig::DeviceName(midi_out_device_getdevice(c), midi_out_device_get_internal_name(c), 0);
+        const QString name = DeviceConfig::DeviceName(midi_out_device_getdevice(c), midi_out_device_get_internal_name(c), 0);
         if (name.isEmpty()) {
             break;
         }
@@ -124,19 +133,23 @@ SettingsSound::onCurrentMachineChanged(int machineId)
                 selectedRow = row - removeRows;
             }
         }
+
         c++;
     }
+
     model->removeRows(0, removeRows);
     ui->comboBoxMidiOut->setEnabled(model->rowCount() > 0);
     ui->comboBoxMidiOut->setCurrentIndex(-1);
     ui->comboBoxMidiOut->setCurrentIndex(selectedRow);
 
+    // Midi In
+    c           = 0;
     model       = ui->comboBoxMidiIn->model();
     removeRows  = model->rowCount();
-    c           = 0;
     selectedRow = 0;
+
     while (true) {
-        QString name = DeviceConfig::DeviceName(midi_in_device_getdevice(c), midi_in_device_get_internal_name(c), 0);
+        const QString name = DeviceConfig::DeviceName(midi_in_device_getdevice(c), midi_in_device_get_internal_name(c), 0);
         if (name.isEmpty()) {
             break;
         }
@@ -150,14 +163,19 @@ SettingsSound::onCurrentMachineChanged(int machineId)
 
         c++;
     }
+
     model->removeRows(0, removeRows);
     ui->comboBoxMidiIn->setEnabled(model->rowCount() > 0);
     ui->comboBoxMidiIn->setCurrentIndex(-1);
     ui->comboBoxMidiIn->setCurrentIndex(selectedRow);
 
+    // Standalone MPU401
     ui->checkBoxMPU401->setChecked(mpu401_standalone_enable > 0);
+
+    // Float32 Sound
     ui->checkBoxFloat32->setChecked(sound_is_float > 0);
 
+    // FM Driver
     switch (fm_driver) {
         case FM_DRV_YMFM:
             ui->radioButtonYMFM->setChecked(true);
@@ -192,13 +210,24 @@ SettingsSound::on_comboBoxSoundCard1_currentIndexChanged(int index)
     if (index < 0) {
         return;
     }
-    ui->pushButtonConfigureSoundCard1->setEnabled(sound_card_has_config(ui->comboBoxSoundCard1->currentData().toInt()));
+    int sndCard = ui->comboBoxSoundCard1->currentData().toInt();
+
+    if (sndCard == SOUND_INTERNAL)
+        ui->pushButtonConfigureSoundCard1->setEnabled(machine_has_flags(machineId, MACHINE_SOUND) &&
+                                            device_has_config(machine_get_snd_device(machineId)));
+    else
+        ui->pushButtonConfigureSoundCard1->setEnabled(sound_card_has_config(sndCard));
 }
 
 void
 SettingsSound::on_pushButtonConfigureSoundCard1_clicked()
 {
-    DeviceConfig::ConfigureDevice(sound_card_getdevice(ui->comboBoxSoundCard1->currentData().toInt()), 0, qobject_cast<Settings *>(Settings::settings));
+    int   sndCard = ui->comboBoxSoundCard1->currentData().toInt();
+    auto *device  = sound_card_getdevice(sndCard);
+
+    if (sndCard == SOUND_INTERNAL)
+        device = machine_get_snd_device(machineId);
+    DeviceConfig::ConfigureDevice(device, 1, qobject_cast<Settings *>(Settings::settings));
 }
 
 void
@@ -207,13 +236,18 @@ SettingsSound::on_comboBoxSoundCard2_currentIndexChanged(int index)
     if (index < 0) {
         return;
     }
-    ui->pushButtonConfigureSoundCard2->setEnabled(sound_card_has_config(ui->comboBoxSoundCard2->currentData().toInt()));
+
+    int sndCard = ui->comboBoxSoundCard2->currentData().toInt();
+
+    ui->pushButtonConfigureSoundCard2->setEnabled(sound_card_has_config(sndCard));
 }
 
 void
 SettingsSound::on_pushButtonConfigureSoundCard2_clicked()
 {
-    DeviceConfig::ConfigureDevice(sound_card_getdevice(ui->comboBoxSoundCard2->currentData().toInt()), 0, qobject_cast<Settings *>(Settings::settings));
+    int             sndCard = ui->comboBoxSoundCard2->currentData().toInt();
+    const device_t *device  = sound_card_getdevice(sndCard);
+    DeviceConfig::ConfigureDevice(device, 2, qobject_cast<Settings *>(Settings::settings));
 }
 
 void
@@ -222,13 +256,19 @@ SettingsSound::on_comboBoxSoundCard3_currentIndexChanged(int index)
     if (index < 0) {
         return;
     }
-    ui->pushButtonConfigureSoundCard3->setEnabled(sound_card_has_config(ui->comboBoxSoundCard3->currentData().toInt()));
+
+    int sndCard = ui->comboBoxSoundCard3->currentData().toInt();
+
+    ui->pushButtonConfigureSoundCard3->setEnabled(sound_card_has_config(sndCard));
 }
 
 void
 SettingsSound::on_pushButtonConfigureSoundCard3_clicked()
 {
-    DeviceConfig::ConfigureDevice(sound_card_getdevice(ui->comboBoxSoundCard3->currentData().toInt()), 0, qobject_cast<Settings *>(Settings::settings));
+    int             sndCard = ui->comboBoxSoundCard3->currentData().toInt();
+    const device_t *device  = sound_card_getdevice(sndCard);
+
+    DeviceConfig::ConfigureDevice(device, 3, qobject_cast<Settings *>(Settings::settings));
 }
 
 void
@@ -237,13 +277,19 @@ SettingsSound::on_comboBoxSoundCard4_currentIndexChanged(int index)
     if (index < 0) {
         return;
     }
-    ui->pushButtonConfigureSoundCard4->setEnabled(sound_card_has_config(ui->comboBoxSoundCard4->currentData().toInt()));
+
+    int sndCard = ui->comboBoxSoundCard4->currentData().toInt();
+
+    ui->pushButtonConfigureSoundCard4->setEnabled(sound_card_has_config(sndCard));
 }
 
 void
 SettingsSound::on_pushButtonConfigureSoundCard4_clicked()
 {
-    DeviceConfig::ConfigureDevice(sound_card_getdevice(ui->comboBoxSoundCard4->currentData().toInt()), 0, qobject_cast<Settings *>(Settings::settings));
+    int             sndCard = ui->comboBoxSoundCard4->currentData().toInt();
+    const device_t *device  = sound_card_getdevice(sndCard);
+
+    DeviceConfig::ConfigureDevice(device, 4, qobject_cast<Settings *>(Settings::settings));
 }
 
 void
@@ -252,6 +298,7 @@ SettingsSound::on_comboBoxMidiOut_currentIndexChanged(int index)
     if (index < 0) {
         return;
     }
+
     ui->pushButtonConfigureMidiOut->setEnabled(midi_out_device_has_config(ui->comboBoxMidiOut->currentData().toInt()));
     ui->checkBoxMPU401->setEnabled(allowMpu401(ui) && (machine_has_bus(machineId, MACHINE_BUS_ISA) || machine_has_bus(machineId, MACHINE_BUS_MCA)));
     ui->pushButtonConfigureMPU401->setEnabled(allowMpu401(ui) && ui->checkBoxMPU401->isChecked());
@@ -260,7 +307,8 @@ SettingsSound::on_comboBoxMidiOut_currentIndexChanged(int index)
 void
 SettingsSound::on_pushButtonConfigureMidiOut_clicked()
 {
-    DeviceConfig::ConfigureDevice(midi_out_device_getdevice(ui->comboBoxMidiOut->currentData().toInt()), 0, qobject_cast<Settings *>(Settings::settings));
+    DeviceConfig::ConfigureDevice(midi_out_device_getdevice(ui->comboBoxMidiOut->currentData().toInt()), 0,
+                                  qobject_cast<Settings *>(Settings::settings));
 }
 
 void
@@ -269,6 +317,7 @@ SettingsSound::on_comboBoxMidiIn_currentIndexChanged(int index)
     if (index < 0) {
         return;
     }
+
     ui->pushButtonConfigureMidiIn->setEnabled(midi_in_device_has_config(ui->comboBoxMidiIn->currentData().toInt()));
     ui->checkBoxMPU401->setEnabled(allowMpu401(ui) && (machine_has_bus(machineId, MACHINE_BUS_ISA) || machine_has_bus(machineId, MACHINE_BUS_MCA)));
     ui->pushButtonConfigureMPU401->setEnabled(allowMpu401(ui) && ui->checkBoxMPU401->isChecked());
@@ -277,7 +326,8 @@ SettingsSound::on_comboBoxMidiIn_currentIndexChanged(int index)
 void
 SettingsSound::on_pushButtonConfigureMidiIn_clicked()
 {
-    DeviceConfig::ConfigureDevice(midi_in_device_getdevice(ui->comboBoxMidiIn->currentData().toInt()), 0, qobject_cast<Settings *>(Settings::settings));
+    DeviceConfig::ConfigureDevice(midi_in_device_getdevice(ui->comboBoxMidiIn->currentData().toInt()), 0,
+                                  qobject_cast<Settings *>(Settings::settings));
 }
 
 void
@@ -289,9 +339,8 @@ SettingsSound::on_checkBoxMPU401_stateChanged(int state)
 void
 SettingsSound::on_pushButtonConfigureMPU401_clicked()
 {
-    if (machine_has_bus(machineId, MACHINE_BUS_MCA) > 0) {
+    if (machine_has_bus(machineId, MACHINE_BUS_MCA) > 0)
         DeviceConfig::ConfigureDevice(&mpu401_mca_device, 0, qobject_cast<Settings *>(Settings::settings));
-    } else {
+    else
         DeviceConfig::ConfigureDevice(&mpu401_device, 0, qobject_cast<Settings *>(Settings::settings));
-    }
 }

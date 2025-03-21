@@ -121,7 +121,7 @@ compaq_cga_poll(void *priv)
             if (self->cga.displine < self->cga.firstline) {
                 self->cga.firstline = self->cga.displine;
                 video_wait_for_buffer();
-                compaq_cga_log("Firstline %i\n", firstline);
+                compaq_cga_log("Firstline %i\n", self->cga.firstline);
             }
             self->cga.lastline = self->cga.displine;
 
@@ -481,7 +481,7 @@ const device_t compaq_cga_device = {
     .init          = compaq_cga_init,
     .close         = compaq_cga_close,
     .reset         = NULL,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = compaq_cga_speed_changed,
     .force_redraw  = NULL,
     .config        = cga_config
@@ -495,7 +495,7 @@ const device_t compaq_cga_2_device = {
     .init          = compaq_cga_init,
     .close         = compaq_cga_close,
     .reset         = NULL,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = compaq_cga_speed_changed,
     .force_redraw  = NULL,
     .config        = cga_config

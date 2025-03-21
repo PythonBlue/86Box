@@ -8,11 +8,10 @@
 
 #include <memory>
 #include <array>
+#include <atomic>
 
 class MediaMenu;
 class RendererStack;
-
-extern std::atomic<bool> blitDummied;
 
 namespace Ui {
 class MainWindow;
@@ -33,6 +32,7 @@ public:
     QSize getRenderWidgetSize();
     void  setSendKeyboardInput(bool enabled);
     void  checkFullscreenHotkey();
+    void  reloadAllRenderers();
 
     std::array<std::unique_ptr<RendererStack>, 8> renderers;
 signals:
@@ -56,7 +56,7 @@ signals:
     void setFullscreen(bool state);
     void setMouseCapture(bool state);
 
-    void showMessageForNonQtThread(int flags, const QString &header, const QString &message);
+    void showMessageForNonQtThread(int flags, const QString &header, const QString &message, std::atomic_bool* done);
     void getTitleForNonQtThread(wchar_t *title);
 public slots:
     void showSettings();
@@ -64,17 +64,19 @@ public slots:
     void togglePause();
     void initRendererMonitorSlot(int monitor_index);
     void destroyRendererMonitorSlot(int monitor_index);
+    void updateStatusEmptyIcons();
     void updateUiPauseState();
 private slots:
     void on_actionFullscreen_triggered();
     void on_actionSettings_triggered();
     void on_actionExit_triggered();
+    void on_actionAuto_pause_triggered();
     void on_actionPause_triggered();
     void on_actionCtrl_Alt_Del_triggered();
     void on_actionCtrl_Alt_Esc_triggered();
     void on_actionHard_Reset_triggered();
     void on_actionRight_CTRL_is_left_ALT_triggered();
-    void on_actionKeyboard_requires_capture_triggered();
+    static void on_actionKeyboard_requires_capture_triggered();
     void on_actionResizable_window_triggered(bool checked);
     void on_actionInverted_VGA_monitor_triggered();
     void on_action0_5x_triggered();
@@ -90,6 +92,7 @@ private slots:
     void on_actionLinear_triggered();
     void on_actionNearest_triggered();
     void on_actionFullScreen_int_triggered();
+    void on_actionFullScreen_int43_triggered();
     void on_actionFullScreen_keepRatio_triggered();
     void on_actionFullScreen_43_triggered();
     void on_actionFullScreen_stretch_triggered();
@@ -120,7 +123,7 @@ private slots:
     void on_actionRenderer_options_triggered();
 
     void refreshMediaMenu();
-    void showMessage_(int flags, const QString &header, const QString &message);
+    void showMessage_(int flags, const QString &header, const QString &message, std::atomic_bool* done = nullptr);
     void getTitle_(wchar_t *title);
 
     void on_actionMCA_devices_triggered();
@@ -171,10 +174,17 @@ private:
     bool fs_on_signal        = false;
     bool fs_off_signal       = false;
 
+    /* Reload the renderers after closing renderer options dialog. */
+    bool reload_renderers    = false;
+
     friend class SpecifyDimensions;
     friend class ProgSettings;
     friend class RendererCommon;
     friend class RendererStack; // For UI variable access by non-primary renderer windows.
+    friend class WindowsRawInputFilter; // Needed to reload renderers on style sheet changes.
+
+    
+    bool isShowMessage = false;
 };
 
 #endif // QT_MAINWINDOW_HPP

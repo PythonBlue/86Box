@@ -14,7 +14,6 @@
  *
  *          Copyright 2022 TheCollector1995.
  */
-
 #ifndef VIDEO_XGA_H
 #define VIDEO_XGA_H
 
@@ -36,7 +35,7 @@ typedef struct xga_t {
     mem_mapping_t  linear_mapping;
     mem_mapping_t  video_mapping;
     rom_t          bios_rom;
-    rom_t          vga_bios_rom;
+    rom_t          bios_rom2;
     xga_hwcursor_t hwcursor;
     xga_hwcursor_t hwcursor_latch;
     PALETTE        extpal;
@@ -48,6 +47,8 @@ typedef struct xga_t {
 
     uint8_t  pos_regs[8];
     uint8_t  disp_addr;
+    uint8_t  dac_mask;
+    uint8_t  dac_status;
     uint8_t  cfg_reg;
     uint8_t  instance;
     uint8_t  op_mode;
@@ -86,6 +87,8 @@ typedef struct xga_t {
     uint8_t  instance_isa;
     uint8_t  instance_num;
     uint8_t  ext_mem_addr;
+    uint8_t  vga_post;
+    uint8_t  addr_test;
     uint8_t *vram;
     uint8_t *changedvram;
 
@@ -107,6 +110,10 @@ typedef struct xga_t {
     uint16_t old_pal_addr_idx;
     uint16_t sprite_pal_addr_idx_prefetch;
 
+    int dac_addr;
+    int dac_pos;
+    int dac_r;
+    int dac_g;
     int v_total;
     int dispend;
     int v_syncstart;
@@ -144,6 +151,7 @@ typedef struct xga_t {
     int a5_test;
     int type;
     int bus;
+    int busy;
 
     uint32_t linear_base;
     uint32_t linear_size;
@@ -162,6 +170,9 @@ typedef struct xga_t {
     uint32_t write_bank;
     uint32_t px_map_base;
     uint32_t pallook[512];
+    uint32_t bios_diag;
+
+    PALETTE xgapal;
 
     uint64_t dispontime;
     uint64_t dispofftime;
@@ -201,6 +212,8 @@ typedef struct xga_t {
         int dst_map;
         int bkgd_src;
         int fore_src;
+        int oldx;
+        int oldy;
         int x;
         int y;
         int sx;
@@ -211,6 +224,7 @@ typedef struct xga_t {
         int py;
         int pattern;
         int command_len;
+        int filling;
 
         uint32_t short_stroke;
         uint32_t color_cmp;
@@ -226,7 +240,6 @@ typedef struct xga_t {
         uint16_t px_map_height[4];
         uint32_t px_map_base[4];
     } accel;
-
-    int big_endian_linear;
 } xga_t;
+
 #endif /*VIDEO_XGA_H*/

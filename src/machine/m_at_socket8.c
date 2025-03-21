@@ -33,11 +33,45 @@
 #include <86box/timer.h>
 #include <86box/nvr.h>
 #include <86box/sio.h>
+#include <86box/sound.h>
 #include <86box/hwm.h>
 #include <86box/spd.h>
 #include <86box/video.h>
 #include "cpu.h"
 #include <86box/machine.h>
+
+int
+machine_at_ap61_init(const machine_t *model)
+{
+    int ret;
+
+    ret = bios_load_linear("roms/machines/ap61/ap61r120.bin",
+                           0x000e0000, 131072, 0);
+
+    if (bios_only || !ret)
+        return ret;
+
+    machine_at_common_init(model);
+
+    pci_init(PCI_CONFIG_TYPE_1);
+    pci_register_slot(0x19, PCI_CARD_NORTHBRIDGE,     0, 0, 0, 0);
+    pci_register_slot(0x14, PCI_CARD_NORTHBRIDGE_SEC, 0, 0, 0, 0);
+    pci_register_slot(0x02, PCI_CARD_SOUTHBRIDGE,     0, 0, 0, 0);
+    pci_register_slot(0x07, PCI_CARD_IDE,             0xFE, 0xFF, 0, 0);
+    pci_register_slot(0x03, PCI_CARD_NORMAL,          1, 2, 3, 4);
+    pci_register_slot(0x04, PCI_CARD_NORMAL,          2, 3, 4, 1);
+    pci_register_slot(0x05, PCI_CARD_NORMAL,          3, 4, 1, 2);
+    pci_register_slot(0x06, PCI_CARD_NORMAL,          4, 1, 2, 3);
+    device_add(&i450kx_device);
+    device_add(&sio_zb_device);
+    device_add(&ide_cmd646_device);
+    device_add(&keyboard_ps2_acer_pci_device);
+    device_add(&fdc37c665_device);
+    device_add(&sst_flash_29ee010_device);
+    // device_add(&intel_flash_bxt_device);
+
+    return ret;
+}
 
 int
 machine_at_p6rp4_init(const machine_t *model)
@@ -54,14 +88,14 @@ machine_at_p6rp4_init(const machine_t *model)
     device_add(&p6rp4_nvr_device);
 
     pci_init(PCI_CONFIG_TYPE_1);
-    pci_register_slot(0x19, PCI_CARD_NORTHBRIDGE, 0, 0, 0, 0);
-    pci_register_slot(0x14, PCI_CARD_AGPBRIDGE,   0, 0, 0, 0);
-    pci_register_slot(0x02, PCI_CARD_SOUTHBRIDGE, 0, 0, 0, 0);
-    pci_register_slot(0x08, PCI_CARD_IDE,         0, 0, 0, 0);
-    pci_register_slot(0x07, PCI_CARD_NORMAL,      1, 2, 3, 4);
-    pci_register_slot(0x06, PCI_CARD_NORMAL,      2, 3, 4, 1);
-    pci_register_slot(0x05, PCI_CARD_NORMAL,      3, 4, 1, 2);
-    pci_register_slot(0x04, PCI_CARD_NORMAL,      4, 1, 2, 3);
+    pci_register_slot(0x19, PCI_CARD_NORTHBRIDGE,     0, 0, 0, 0);
+    pci_register_slot(0x14, PCI_CARD_NORTHBRIDGE_SEC, 0, 0, 0, 0);
+    pci_register_slot(0x02, PCI_CARD_SOUTHBRIDGE,     0, 0, 0, 0);
+    pci_register_slot(0x08, PCI_CARD_IDE,             0, 0, 0, 0);
+    pci_register_slot(0x07, PCI_CARD_NORMAL,          1, 2, 3, 4);
+    pci_register_slot(0x06, PCI_CARD_NORMAL,          2, 3, 4, 1);
+    pci_register_slot(0x05, PCI_CARD_NORMAL,          3, 4, 1, 2);
+    pci_register_slot(0x04, PCI_CARD_NORMAL,          4, 1, 2, 3);
     device_add(&i450kx_device);
     device_add(&sio_zb_device);
     device_add(&ide_cmd646_device);
@@ -142,7 +176,7 @@ machine_at_acerv60n_init(const machine_t *model)
     if (bios_only || !ret)
         return ret;
 
-    machine_at_common_init(model);
+    machine_at_common_init_ex(model,2 );
 
     pci_init(PCI_CONFIG_TYPE_1);
     pci_register_slot(0x00, PCI_CARD_NORTHBRIDGE, 0, 0, 0, 0);
@@ -154,8 +188,38 @@ machine_at_acerv60n_init(const machine_t *model)
     pci_register_slot(0x0C, PCI_CARD_NORMAL,      2, 3, 4, 1);
     device_add(&i440fx_device);
     device_add(&piix3_device);
-    device_add(&keyboard_ps2_pci_device);
     device_add(&fdc37c935_device);
+    device_add(&sst_flash_29ee010_device);
+
+    return ret;
+}
+
+int
+machine_at_lgibmx61_init(const machine_t *model)
+{
+    int ret;
+
+    ret = bios_load_linear("roms/machines/lgibmx61/bios.rom",
+                           0x000e0000, 131072, 0);
+
+    if (bios_only || !ret)
+        return ret;
+
+    machine_at_common_init(model);
+
+    pci_init(PCI_CONFIG_TYPE_1);
+    pci_register_slot(0x00, PCI_CARD_NORTHBRIDGE, 0, 0, 0, 0);
+    pci_register_slot(0x07, PCI_CARD_SOUTHBRIDGE, 0, 0, 0, 0);
+    pci_register_slot(0x0C, PCI_CARD_NORMAL,      1, 2, 3, 4);
+    pci_register_slot(0x0D, PCI_CARD_NORMAL,      2, 3, 4, 1);
+    pci_register_slot(0x0E, PCI_CARD_NORMAL,      3, 4, 1, 2);
+    pci_register_slot(0x0F, PCI_CARD_NORMAL,      4, 1, 2, 3);
+    device_add(&i440fx_device);
+    device_add(&piix3_device);
+    // device_add(&keyboard_ps2_ami_pci_device);
+    device_add(&keyboard_ps2_ami_device);
+    // device_add(&w83787f_device);
+    device_add(&w83877f_president_device);
     device_add(&sst_flash_29ee010_device);
 
     return ret;
@@ -192,6 +256,46 @@ machine_at_vs440fx_init(const machine_t *model)
 
     device_add(&intel_flash_bxt_ami_device);
 
+    if (sound_card_current[0] == SOUND_INTERNAL)
+        device_add(machine_get_snd_device(machine));
+
+    return ret;
+}
+
+int
+machine_at_gw2kvenus_init(const machine_t *model)
+{
+    int ret;
+
+    ret = bios_load_linear_combined2("roms/machines/gw2kvenus/1011CS1T.BIO",
+                                     "roms/machines/gw2kvenus/1011CS1T.BI1",
+                                     "roms/machines/gw2kvenus/1011CS1T.BI2",
+                                     "roms/machines/gw2kvenus/1011CS1T.BI3",
+                                     "roms/machines/gw2kvenus/1011CS1T.RCV",
+                                     0x3a000, 128);
+
+    if (bios_only || !ret)
+        return ret;
+
+    machine_at_common_init(model);
+
+    pci_init(PCI_CONFIG_TYPE_1);
+    pci_register_slot(0x00, PCI_CARD_NORTHBRIDGE, 0, 0, 0, 0);
+    pci_register_slot(0x0B, PCI_CARD_NORMAL,      1, 2, 3, 4);
+    pci_register_slot(0x0F, PCI_CARD_NORMAL,      4, 1, 2, 3);
+    pci_register_slot(0x11, PCI_CARD_NORMAL,      3, 4, 1, 2);
+    pci_register_slot(0x13, PCI_CARD_NORMAL,      2, 3, 4, 1);
+    pci_register_slot(0x07, PCI_CARD_SOUTHBRIDGE, 0, 0, 0, 0);
+    device_add(&i440fx_device);
+    device_add(&piix3_device);
+    device_add(&keyboard_ps2_intel_ami_pci_device);
+    device_add(&pc87307_device);
+
+    device_add(&intel_flash_bxt_ami_device);
+
+    if (sound_card_current[0] == SOUND_INTERNAL)
+        device_add(machine_get_snd_device(machine));
+
     return ret;
 }
 
@@ -224,6 +328,12 @@ machine_at_ap440fx_init(const machine_t *model)
     device_add(&keyboard_ps2_ami_pci_device);
     device_add(&pc87307_device);
     device_add(&intel_flash_bxt_ami_device);
+
+    if (sound_card_current[0] == SOUND_INTERNAL)
+        device_add(machine_get_snd_device(machine));
+
+    if (gfxcard[0] == VID_INTERNAL)
+        device_add(machine_get_vid_device(machine));
 
     return ret;
 }
@@ -268,7 +378,7 @@ machine_at_m6mi_init(const machine_t *model)
     if (bios_only || !ret)
         return ret;
 
-    machine_at_common_init(model);
+    machine_at_common_init_ex(model, 2);
 
     pci_init(PCI_CONFIG_TYPE_1);
     pci_register_slot(0x00, PCI_CARD_NORTHBRIDGE, 0, 0, 0, 0);
@@ -279,7 +389,6 @@ machine_at_m6mi_init(const machine_t *model)
     pci_register_slot(0x0F, PCI_CARD_NORMAL,      4, 1, 2, 3);
     device_add(&i440fx_device);
     device_add(&piix3_device);
-    device_add(&keyboard_ps2_ami_pci_device);
     device_add(&fdc37c935_device);
     device_add(&intel_flash_bxt_device);
 

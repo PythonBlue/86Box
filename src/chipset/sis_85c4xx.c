@@ -174,8 +174,8 @@ sis_85c4xx_out(uint16_t port, uint8_t val, void *priv)
         case 0x23:
             if ((dev->cur_reg >= dev->reg_base) && (dev->cur_reg <= dev->reg_last)) {
                 valxor = val ^ dev->regs[rel_reg];
-                if (rel_reg == 0x19)
-                    dev->regs[rel_reg] &= ~val;
+                if (rel_reg == 0x00)
+                    dev->regs[rel_reg] = (dev->regs[rel_reg] & 0x1f) | (val & 0xe0);
                 else
                     dev->regs[rel_reg] = val;
 
@@ -368,8 +368,7 @@ sis_85c4xx_close(void *priv)
 static void *
 sis_85c4xx_init(const device_t *info)
 {
-    sis_85c4xx_t *dev = (sis_85c4xx_t *) malloc(sizeof(sis_85c4xx_t));
-    memset(dev, 0, sizeof(sis_85c4xx_t));
+    sis_85c4xx_t *dev = (sis_85c4xx_t *) calloc(1, sizeof(sis_85c4xx_t));
 
     dev->is_471 = (info->local >> 8) & 0xff;
 
@@ -403,7 +402,7 @@ const device_t sis_85c401_device = {
     .init          = sis_85c4xx_init,
     .close         = sis_85c4xx_close,
     .reset         = sis_85c4xx_reset,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = NULL
@@ -417,7 +416,7 @@ const device_t sis_85c460_device = {
     .init          = sis_85c4xx_init,
     .close         = sis_85c4xx_close,
     .reset         = sis_85c4xx_reset,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = NULL
@@ -432,7 +431,7 @@ const device_t sis_85c461_device = {
     .init          = sis_85c4xx_init,
     .close         = sis_85c4xx_close,
     .reset         = sis_85c4xx_reset,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = NULL
@@ -446,7 +445,7 @@ const device_t sis_85c471_device = {
     .init          = sis_85c4xx_init,
     .close         = sis_85c4xx_close,
     .reset         = sis_85c4xx_reset,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = NULL

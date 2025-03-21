@@ -1085,12 +1085,12 @@ im1024_speed_changed(void *priv)
 const device_t im1024_device = {
     .name          = "ImageManager 1024",
     .internal_name = "im1024",
-    .flags         = DEVICE_ISA | DEVICE_AT,
+    .flags         = DEVICE_ISA,
     .local         = 0,
     .init          = im1024_init,
     .close         = im1024_close,
     .reset         = NULL,
-    { .available = im1024_available },
+    .available     = im1024_available,
     .speed_changed = im1024_speed_changed,
     .force_redraw  = NULL,
     .config        = NULL

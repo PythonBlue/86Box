@@ -31,6 +31,7 @@
 #include <86box/vid_svga.h>
 #include <86box/vid_vga.h>
 
+static video_timings_t timing_vga = { .type = VIDEO_ISA, .write_b = 8, .write_w = 16, .write_l = 32, .read_b = 8, .read_w = 16, .read_l = 32 };
 static video_timings_t timing_ps1_svga_isa = { .type = VIDEO_ISA, .write_b = 6, .write_w = 8, .write_l = 16, .read_b = 6, .read_w = 8, .read_l = 16 };
 static video_timings_t timing_ps1_svga_mca = { .type = VIDEO_MCA, .write_b = 6, .write_w = 8, .write_l = 16, .read_b = 6, .read_w = 8, .read_l = 16 };
 
@@ -103,6 +104,37 @@ vga_in(uint16_t addr, void *priv)
     return temp;
 }
 
+void vga_disable(void* p)
+{
+    vga_t* vga = (vga_t*)p;
+    svga_t* svga = &vga->svga;
+
+    io_removehandler(0x03a0, 0x0040, vga_in, NULL, NULL, vga_out, NULL, NULL, vga);
+    mem_mapping_disable(&svga->mapping);
+    svga->vga_enabled = 0;
+}
+
+void vga_enable(void* p)
+{
+    vga_t* vga = (vga_t*)p;
+    svga_t* svga = &vga->svga;
+
+    io_sethandler(0x03c0, 0x0020, vga_in, NULL, NULL, vga_out, NULL, NULL, vga);
+    if (!(svga->miscout & 1))
+        io_sethandler(0x03a0, 0x0020, vga_in, NULL, NULL, vga_out, NULL, NULL, vga);
+
+    mem_mapping_enable(&svga->mapping);
+    svga->vga_enabled = 1;
+}
+
+int vga_isenabled(void* p)
+{
+    vga_t* vga = (vga_t*)p;
+    svga_t* svga = &vga->svga;
+
+    return svga->vga_enabled;
+}
+
 static void *
 vga_init(const device_t *info)
 {
@@ -149,6 +181,7 @@ ps1vga_init(const device_t *info)
 
     vga->svga.bpp     = 8;
     vga->svga.miscout = 1;
+    vga->svga.vga_enabled = 1;
 
     return vga;
 }
@@ -186,42 +219,42 @@ vga_force_redraw(void *priv)
 }
 
 const device_t vga_device = {
-    .name          = "VGA",
+    .name          = "IBM VGA",
     .internal_name = "vga",
     .flags         = DEVICE_ISA,
     .local         = 0,
     .init          = vga_init,
     .close         = vga_close,
     .reset         = NULL,
-    { .available = vga_available },
+    .available     = vga_available,
     .speed_changed = vga_speed_changed,
     .force_redraw  = vga_force_redraw,
     .config        = NULL
 };
 
 const device_t ps1vga_device = {
-    .name          = "PS/1 VGA",
+    .name          = "IBM PS/1 VGA",
     .internal_name = "ps1vga",
     .flags         = DEVICE_ISA,
     .local         = 0,
     .init          = ps1vga_init,
     .close         = vga_close,
     .reset         = NULL,
-    { .available = vga_available },
+    .available     = NULL,
     .speed_changed = vga_speed_changed,
     .force_redraw  = vga_force_redraw,
     .config        = NULL
 };
 
 const device_t ps1vga_mca_device = {
-    .name          = "PS/1 VGA",
+    .name          = "IBM PS/1 VGA",
     .internal_name = "ps1vga_mca",
     .flags         = DEVICE_MCA,
     .local         = 0,
     .init          = ps1vga_init,
     .close         = vga_close,
     .reset         = NULL,
-    { .available = vga_available },
+    .available     = NULL,
     .speed_changed = vga_speed_changed,
     .force_redraw  = vga_force_redraw,
     .config        = NULL

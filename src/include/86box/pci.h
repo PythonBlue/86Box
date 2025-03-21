@@ -71,6 +71,7 @@
 #define FLAG_CONFIG_M1_IO_ON      0x00000020
 #define FLAG_NO_IRQ_STEERING      0x00000040
 #define FLAG_NO_BRIDGES           0x00000080
+#define FLAG_TRC_CONTROLS_CPURST  0x00000100
 
 #define FLAG_MECHANISM_MASK       FLAG_MECHANISM_1 | FLAG_MECHANISM_2
 #define FLAG_MASK                 0x0000007f
@@ -109,11 +110,17 @@
 #define PCI_CARD_MAX              (PCI_CARDS_NUM - 1)
 /* The number of PCI card INT pins - always at 4 per the PCI specification. */
 #define PCI_INT_PINS_NUM          4
+#define PCI_INT_PINS_MAX          (PCI_INT_PINS_NUM - 1)
 /* The base for MIRQ lines accepted by pci_irq(). */
 #define PCI_MIRQ_BASE             PCI_CARDS_NUM
 /* PCI MIRQ lines (currently 8, this many are needed by the ALi M1543(C). */
 #define PCI_MIRQS_NUM             8
 #define PCI_MIRQ_MAX              (PCI_MIRQS_NUM - 1)
+/* The base for internal IRQ lines accepted by pci_irq(). */
+#define PCI_IIRQ_BASE             0x80
+/* PCI direct IRQ lines - always at 4 per the PCI specification. */
+#define PCI_IIRQS_NUM             4
+#define PCI_IIRQ_MAX              (PCI_IIRQS_NUM - 1)
 /* The base for direct IRQ lines accepted by pci_irq(). */
 #define PCI_DIRQ_BASE             0xf0
 /* PCI direct IRQ lines (currently 16 because we only emulate the legacy PIC). */
@@ -146,11 +153,19 @@
         pci_register_bus_slot(0, card, type, inta, intb, intc, intd)
 
 #define pci_set_mirq(mirq, level, irq_state) \
-        pci_irq(PCI_MIRQ_BASE | mirq, 0, level, 1, irq_state)
+        pci_irq(PCI_MIRQ_BASE | (mirq), 0, level, 1, irq_state)
+#define pci_set_iirq(pci_int, irq_state) \
+        pci_irq(PCI_IIRQ_BASE | (pci_int), 0, 0, 1, irq_state)
+#define pci_set_dirq(irq, irq_state) \
+        pci_irq(PCI_DIRQ_BASE | (irq), 0, 1, 1, irq_state)
 #define pci_set_irq(slot, pci_int, irq_state) \
         pci_irq(slot, pci_int, 0, 1, irq_state)
 #define pci_clear_mirq(mirq, level, irq_state) \
-        pci_irq(PCI_MIRQ_BASE | mirq, 0, level, 0, irq_state)
+        pci_irq(PCI_MIRQ_BASE | (mirq), 0, level, 0, irq_state)
+#define pci_clear_iirq(pci_int, irq_state) \
+        pci_irq(PCI_IIRQ_BASE | (pci_int), 0, 0, 0, irq_state)
+#define pci_clear_dirq(dirq, irq_state) \
+        pci_irq(PCI_DIRQ_BASE | (irq), 0, 1, 0, irq_state)
 #define pci_clear_irq(slot, pci_int, irq_state) \
         pci_irq(slot, pci_int, 0, 0, irq_state)
 
@@ -216,7 +231,9 @@ extern uint32_t    pci_size;
 extern void        pci_set_irq_routing(int pci_int, int irq);
 extern void        pci_set_irq_level(int pci_int, int level);
 extern void        pci_enable_mirq(int mirq);
-extern void        pci_set_mirq_routing(int mirq, int irq);
+extern void        pci_set_mirq_routing(int mirq, uint8_t irq);
+extern uint8_t     pci_get_mirq_level(int mirq);
+extern void        pci_set_mirq_level(int mirq, uint8_t irq);
 
 /* PCI raise IRQ: the first parameter is slot if < PCI_MIRQ_BASE, MIRQ if >= PCI_MIRQ_BASE
                   and < PCI_DIRQ_BASE, and direct IRQ line if >= PCI_DIRQ_BASE (RichardG's
@@ -279,6 +296,7 @@ extern const device_t via_vp3_agp_device;
 extern const device_t via_mvp3_agp_device;
 extern const device_t via_apro_agp_device;
 extern const device_t via_vt8601_agp_device;
+extern const device_t sis_5xxx_agp_device;
 #endif
 
 #endif /*EMU_PCI_H*/

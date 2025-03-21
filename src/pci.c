@@ -23,6 +23,7 @@
 #include <86box/86box.h>
 #include <86box/machine.h>
 #include "cpu.h"
+#include "x86.h"
 #include <86box/io.h>
 #include <86box/pic.h>
 #include <86box/mem.h>
@@ -56,6 +57,8 @@ typedef struct pci_card_desc_t {
 typedef struct pci_mirq_t {
     uint8_t     enabled;
     uint8_t     irq_line;
+    uint8_t     irq_level;
+    uint8_t     pad;
 } pci_mirq_t;
 
 int         pci_burst_time;
@@ -90,7 +93,7 @@ static int         pci_card;
 static int         pci_bus;
 static int         pci_key;
 static int         pci_trc_reg = 0;
-static uint32      pci_enable = 0x00000000;
+static uint32_t    pci_enable = 0x00000000;
 
 static void        pci_reset_regs(void);
 
@@ -131,9 +134,21 @@ pci_enable_mirq(int mirq)
 }
 
 void
-pci_set_mirq_routing(int mirq, int irq)
+pci_set_mirq_routing(int mirq, uint8_t irq)
 {
     pci_mirqs[mirq].irq_line = irq;
+}
+
+uint8_t
+pci_get_mirq_level(int mirq)
+{
+    return pci_mirqs[mirq].irq_level;
+}
+
+void
+pci_set_mirq_level(int mirq, uint8_t level)
+{
+    pci_mirqs[mirq].irq_level = level;
 }
 
 /* PCI raise IRQ: the first parameter is slot if < PCI_MIRQ_BASE, MIRQ if >= PCI_MIRQ_BASE
@@ -190,6 +205,21 @@ pci_irq(uint8_t slot, uint8_t pci_int, int level, int set, uint8_t *irq_state)
                 }
             }
             break;
+        case (PCI_IIRQ_BASE | 0x00) ... (PCI_IIRQ_BASE | PCI_IIRQS_NUM):
+            /* PCI internal routing. */
+            if (slot > 0x00) {
+                slot = (slot - 1) & PCI_INT_PINS_MAX;
+
+                irq_line    = pci_irqs[slot];
+
+                /* Ignore what was provided to us as a parameter and override it with whatever
+                   the chipset is set to. */
+                level       = !!pci_irq_level[slot];
+            } else {
+                irq_line    = 0xff;
+                level       = 0;
+            }
+            break;
         case (PCI_MIRQ_BASE | 0x00) ... (PCI_MIRQ_BASE | PCI_MIRQ_MAX):
             /* MIRQ */
             slot &= PCI_MIRQ_MAX;
@@ -240,7 +270,6 @@ pci_relocate_slot(int type, int new_slot)
 {
     int     card = -1;
     int     old_slot;
-    uint8_t mapping;
 
     if ((new_slot < 0) || (new_slot > 31))
         return;
@@ -257,9 +286,12 @@ pci_relocate_slot(int type, int new_slot)
 
     old_slot                              = pci_cards[card].id;
     pci_cards[card].id                    = new_slot;
-    mapping                               = pci_card_to_slot_mapping[0][old_slot];
-    pci_card_to_slot_mapping[0][old_slot] = PCI_CARD_INVALID;
-    pci_card_to_slot_mapping[0][new_slot] = mapping;
+
+    if (pci_card_to_slot_mapping[0][old_slot] == card)
+        pci_card_to_slot_mapping[0][old_slot] = PCI_CARD_INVALID;
+
+    if (pci_card_to_slot_mapping[0][new_slot] == PCI_CARD_INVALID)
+        pci_card_to_slot_mapping[0][new_slot] = card;
 }
 
 /* Write PCI enable/disable key, split for the ALi M1435. */
@@ -389,7 +421,14 @@ pci_trc_reset(uint8_t val)
         flushmmucache();
     }
 
+#ifdef USE_DYNAREC
+    if (cpu_use_dynarec)
+        cpu_init = 1;
+    else
+        resetx86();
+#else
     resetx86();
+#endif
 }
 
 void
@@ -408,6 +447,9 @@ pci_write(uint16_t port, uint8_t val, UNUSED(void *priv))
             }
             break;
         case 0xcf9:
+            if (pci_flags & FLAG_TRC_CONTROLS_CPURST)
+                cpu_cpurst_on_sr = !(val & 0x10);
+
             if (!(pci_trc_reg & 4) && (val & 4))
                 pci_trc_reset(val);
 
@@ -748,7 +790,7 @@ pci_add_card(uint8_t add_type, uint8_t (*read)(int func, int addr, void *priv),
     if (next_pci_card < PCI_CARDS_NUM) {
         dev = &pci_card_descs[next_pci_card];
 
-        dev->type = add_type;
+        dev->type  = add_type | PCI_ADD_STRICT;
         dev->read  = read;
         dev->write = write;
         dev->priv  = priv;
@@ -815,10 +857,12 @@ pci_add_bridge(uint8_t agp, uint8_t (*read)(int func, int addr, void *priv), voi
     pci_card_t *card;
     uint8_t bridge_slot = agp ? pci_find_slot(PCI_ADD_AGPBRIDGE, 0xff) : last_normal_pci_card_id;
 
-    card = &pci_cards[bridge_slot];
-    card->read  = read;
-    card->write = write;
-    card->priv  = priv;
+    if (bridge_slot != PCI_CARD_INVALID) {
+        card = &pci_cards[bridge_slot];
+        card->read  = read;
+        card->write = write;
+        card->priv  = priv;
+    }
 
     *slot = bridge_slot;
 }
@@ -841,7 +885,7 @@ pci_register_cards(void)
             type = pci_card_descs[i].type;
             slot = pci_card_descs[i].slot;
 #endif
-            normal = (pci_card_descs[i].type == PCI_CARD_NORMAL);
+            normal = ((pci_card_descs[i].type & ~PCI_ADD_STRICT) == PCI_CARD_NORMAL);
 
             /* If this is a normal card, increase the next normal card index. */
             if (normal)

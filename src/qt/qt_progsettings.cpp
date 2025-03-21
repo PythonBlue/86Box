@@ -46,7 +46,7 @@ ProgSettings::getIconSetPath()
 {
     if (iconset_to_qt.isEmpty()) {
         // Always include default bundled icons
-        iconset_to_qt.insert("", ":/settings/win/icons");
+        iconset_to_qt.insert("", ":/settings/qt/icons");
         // Walk rom_paths to get the candidates
         for (rom_path_t *emu_rom_path = &rom_paths; emu_rom_path != nullptr; emu_rom_path = emu_rom_path->next) {
             // Check for icons subdir in each candidate
@@ -110,18 +110,24 @@ ProgSettings::ProgSettings(QWidget *parent)
             ui->comboBoxLanguage->setCurrentIndex(ui->comboBoxLanguage->findData(i.key()));
         }
     }
+    ui->comboBoxLanguage->model()->sort(Qt::AscendingOrder);
 
     mouseSensitivity = mouse_sensitivity;
     ui->horizontalSlider->setValue(mouseSensitivity * 100.);
     ui->openDirUsrPath->setChecked(open_dir_usr_path > 0);
+    ui->checkBoxMultimediaKeys->setChecked(inhibit_multimedia_keys);
+#ifndef Q_OS_WINDOWS
+    ui->checkBoxMultimediaKeys->setHidden(true);
+#endif
 }
 
 void
 ProgSettings::accept()
 {
     strcpy(icon_set, ui->comboBox->currentData().toString().toUtf8().data());
-    lang_id           = ui->comboBoxLanguage->currentData().toUInt();
-    open_dir_usr_path = ui->openDirUsrPath->isChecked() ? 1 : 0;
+    lang_id                 = ui->comboBoxLanguage->currentData().toUInt();
+    open_dir_usr_path       = ui->openDirUsrPath->isChecked() ? 1 : 0;
+    inhibit_multimedia_keys = ui->checkBoxMultimediaKeys->isChecked();
 
     loadTranslators(QCoreApplication::instance());
     reloadStrings();
@@ -152,6 +158,27 @@ ProgSettings::on_pushButton_released()
     ui->comboBox->setCurrentIndex(0);
 }
 
+#ifdef Q_OS_WINDOWS
+/* Return the standard font name on Windows, which is overridden per-language
+   to prevent CJK fonts with embedded bitmaps being chosen as a fallback. */
+QString
+ProgSettings::getFontName(uint32_t lcid)
+{
+    switch (lcid) {
+        case 0x0404: /* zh-TW */
+            return "Microsoft JhengHei";
+        case 0x0411: /* ja-JP */
+            return "Meiryo UI";
+        case 0x0412: /* ko-KR */
+            return "Malgun Gothic";
+        case 0x0804: /* zh-CN */
+            return "Microsoft YaHei";
+        default:
+            return "Segoe UI";
+    }
+}
+#endif
+
 void
 ProgSettings::loadTranslators(QObject *parent)
 {
@@ -173,7 +200,9 @@ ProgSettings::loadTranslators(QObject *parent)
                 qDebug() << "Translations loaded.\n";
                 QCoreApplication::installTranslator(translator);
                 if (!qtTranslator->load(QLatin1String("qtbase_") + localetofilename.replace('-', '_'), QLibraryInfo::location(QLibraryInfo::TranslationsPath)))
-                    qtTranslator->load(QLatin1String("qt_") + localetofilename.replace('-', '_'), QApplication::applicationDirPath() + "/./translations/");
+                    if (!qtTranslator->load(QLatin1String("qtbase_") + localetofilename.left(localetofilename.indexOf('-')), QLibraryInfo::location(QLibraryInfo::TranslationsPath)))
+                        if (!qtTranslator->load(QLatin1String("qt_") + localetofilename.replace('-', '_'), QApplication::applicationDirPath() + "/./translations/"))
+                            qtTranslator->load(QLatin1String("qt_") + localetofilename.replace('-', '_'), QLatin1String(":/"));
                 if (QApplication::installTranslator(qtTranslator)) {
                     qDebug() << "Qt translations loaded."
                              << "\n";
@@ -185,7 +214,10 @@ ProgSettings::loadTranslators(QObject *parent)
         translator->load(QLatin1String("86box_") + lcid_langcode[lang_id].first, QLatin1String(":/"));
         QCoreApplication::installTranslator(translator);
         if (!qtTranslator->load(QLatin1String("qtbase_") + QString(lcid_langcode[lang_id].first).replace('-', '_'), QLibraryInfo::location(QLibraryInfo::TranslationsPath)))
-            qtTranslator->load(QLatin1String("qt_") + QString(lcid_langcode[lang_id].first).replace('-', '_'), QApplication::applicationDirPath() + "/./translations/");
+            if (!qtTranslator->load(QLatin1String("qtbase_") + QString(lcid_langcode[lang_id].first).left(QString(lcid_langcode[lang_id].first).indexOf('-')), QLibraryInfo::location(QLibraryInfo::TranslationsPath)))
+                if(!qtTranslator->load(QLatin1String("qt_") + QString(lcid_langcode[lang_id].first).replace('-', '_'), QApplication::applicationDirPath() + "/./translations/"))
+                    qtTranslator->load(QLatin1String("qt_") + QString(lcid_langcode[lang_id].first).replace('-', '_'), QLatin1String(":/"));
+
         QCoreApplication::installTranslator(qtTranslator);
     }
 }

@@ -290,7 +290,6 @@ codegen_mark_code_present(codeblock_t *block, uint32_t start_pc, int len)
 }
 
 extern void codegen_init(void);
-extern void codegen_close(void);
 extern void codegen_reset(void);
 extern void codegen_block_init(uint32_t phys_addr);
 extern void codegen_block_remove(void);
@@ -342,6 +341,7 @@ extern codegen_timing_t codegen_timing_686;
 extern codegen_timing_t codegen_timing_486;
 extern codegen_timing_t codegen_timing_winchip;
 extern codegen_timing_t codegen_timing_winchip2;
+extern codegen_timing_t codegen_timing_k5;
 extern codegen_timing_t codegen_timing_k6;
 extern codegen_timing_t codegen_timing_p6;
 

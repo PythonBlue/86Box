@@ -32,12 +32,8 @@ extern "C" {
 #include <86box/config.h>
 #include <86box/device.h>
 #include <86box/machine.h>
+#include <86box/nvr.h>
 }
-
-// from nvr.h, which we can't import into CPP code
-#define TIME_SYNC_DISABLED 0
-#define TIME_SYNC_ENABLED  1
-#define TIME_SYNC_UTC      2
 
 #include "qt_deviceconfig.hpp"
 #include "qt_models_common.hpp"
@@ -60,6 +56,11 @@ SettingsMachine::SettingsMachine(QWidget *parent)
             ui->radioButtonDisabled->setChecked(true);
             break;
     }
+
+    auto warning_icon = QIcon(":/misc/qt/icons/warning.ico");
+    ui->softFloatWarningIcon->setPixmap(warning_icon.pixmap(warning_icon.actualSize(QSize(16, 16))));
+    ui->softFloatWarningIcon->setVisible(false);
+    ui->softFloatWarningText->setVisible(false);
 
     auto *waitStatesModel = ui->comboBoxWaitStates->model();
     waitStatesModel->insertRows(0, 9);
@@ -278,7 +279,7 @@ SettingsMachine::on_comboBoxSpeed_currentIndexChanged(int index)
         if (!(flags & CPU_SUPPORTS_DYNAREC)) {
             ui->checkBoxDynamicRecompiler->setChecked(false);
             ui->checkBoxDynamicRecompiler->setEnabled(false);
-        } else if (flags & CPU_REQUIRES_DYNAREC) {
+        } else if ((flags & CPU_REQUIRES_DYNAREC) && !cpu_override) {
             ui->checkBoxDynamicRecompiler->setChecked(true);
             ui->checkBoxDynamicRecompiler->setEnabled(false);
         } else {
@@ -288,7 +289,6 @@ SettingsMachine::on_comboBoxSpeed_currentIndexChanged(int index)
 #endif
 
         // win_settings_machine_recalc_fpu
-        int   machineId  = ui->comboBoxMachine->currentData().toInt();
         auto *modelFpu   = ui->comboBoxFPU->model();
         int   removeRows = modelFpu->rowCount();
 
@@ -297,7 +297,7 @@ SettingsMachine::on_comboBoxSpeed_currentIndexChanged(int index)
         for (const char *fpuName = fpu_get_name_from_index(cpuFamily, cpuId, i);
              fpuName != nullptr; fpuName = fpu_get_name_from_index(cpuFamily, cpuId, ++i)) {
             auto fpuType = fpu_get_type_from_index(cpuFamily, cpuId, i);
-            Models::AddEntry(modelFpu, QString("%1").arg(fpuName), fpuType);
+            Models::AddEntry(modelFpu, tr(QString("%1").arg(fpuName).toUtf8().data()), fpuType);
             if (fpu_type == fpuType)
                 selectedFpuRow = i;
         }
@@ -306,11 +306,27 @@ SettingsMachine::on_comboBoxSpeed_currentIndexChanged(int index)
         ui->comboBoxFPU->setEnabled(modelFpu->rowCount() > 1);
         ui->comboBoxFPU->setCurrentIndex(-1);
         ui->comboBoxFPU->setCurrentIndex(selectedFpuRow);
+    }
+}
 
-        ui->checkBoxFPUSoftfloat->setChecked(machine_has_flags(machineId, MACHINE_SOFTFLOAT_ONLY) ?
-                                             true : fpu_softfloat);
-        ui->checkBoxFPUSoftfloat->setEnabled(machine_has_flags(machineId, MACHINE_SOFTFLOAT_ONLY) ?
-                                             false : true);
+void
+SettingsMachine::on_comboBoxFPU_currentIndexChanged(int index)
+{
+    if (index >= 0) {
+        int         cpuFamilyId = ui->comboBoxCPU->currentData().toInt();
+        const auto *cpuFamily   = &cpu_families[cpuFamilyId];
+        int         cpuId       = ui->comboBoxSpeed->currentData().toInt();
+        int         machineId   = ui->comboBoxMachine->currentData().toInt();
+
+        if (fpu_get_type_from_index(cpuFamily, cpuId, index) == FPU_NONE) {
+            ui->checkBoxFPUSoftfloat->setChecked(false);
+            ui->checkBoxFPUSoftfloat->setEnabled(false);
+        } else {
+            ui->checkBoxFPUSoftfloat->setChecked(machine_has_flags(machineId, MACHINE_SOFTFLOAT_ONLY) ?
+                                                 true : fpu_softfloat);
+            ui->checkBoxFPUSoftfloat->setEnabled(machine_has_flags(machineId, MACHINE_SOFTFLOAT_ONLY) ?
+                                                 false : true);
+        }
     }
 }
 
@@ -321,4 +337,14 @@ SettingsMachine::on_pushButtonConfigure_clicked()
     int         machineId = ui->comboBoxMachine->currentData().toInt();
     const auto *device    = machine_get_device(machineId);
     DeviceConfig::ConfigureDevice(device, 0, qobject_cast<Settings *>(Settings::settings));
+}
+
+void SettingsMachine::on_checkBoxFPUSoftfloat_stateChanged(int state) {
+    if(state == Qt::Checked) {
+        ui->softFloatWarningIcon->setVisible(true);
+        ui->softFloatWarningText->setVisible(true);
+    } else {
+        ui->softFloatWarningIcon->setVisible(false);
+        ui->softFloatWarningText->setVisible(false);
+    }
 }

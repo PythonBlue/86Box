@@ -22,6 +22,9 @@ private slots:
     void on_pushButtonConfigure_clicked();
 
 private slots:
+    void on_comboBoxFPU_currentIndexChanged(int index);
+
+private slots:
     void on_comboBoxSpeed_currentIndexChanged(int index);
 
 private slots:
@@ -32,6 +35,7 @@ private slots:
 
 private slots:
     void on_comboBoxMachineType_currentIndexChanged(int index);
+    void on_checkBoxFPUSoftfloat_stateChanged(int state);
 
 private:
     Ui::SettingsMachine *ui;

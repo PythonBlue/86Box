@@ -32,6 +32,9 @@ using atomic_int  = std::atomic_int;
 
 #define makecol(r, g, b)   ((b) | ((g) << 8) | ((r) << 16))
 #define makecol32(r, g, b) ((b) | ((g) << 8) | ((r) << 16))
+#define getcolr(color) (((color) >> 16) & 0xFF)
+#define getcolg(color) (((color) >> 8) & 0xFF)
+#define getcolb(color) ((color) & 0xFF)
 
 enum {
     VID_NONE = 0,
@@ -42,7 +45,8 @@ enum {
     FULLSCR_SCALE_FULL = 0,
     FULLSCR_SCALE_43,
     FULLSCR_SCALE_KEEPRATIO,
-    FULLSCR_SCALE_INT
+    FULLSCR_SCALE_INT,
+    FULLSCR_SCALE_INT43
 };
 
 #ifdef __cplusplus
@@ -64,6 +68,8 @@ enum {
 #define VIDEO_FLAG_TYPE_XGA     4
 #define VIDEO_FLAG_TYPE_NONE    5
 #define VIDEO_FLAG_TYPE_MASK    7
+
+#define VIDEO_FLAG_TYPE_SECONDARY VIDEO_FLAG_TYPE_SPECIAL
 
 typedef struct video_timings_t {
     int type;
@@ -186,6 +192,8 @@ extern int          video_fullscreen_scale;
 extern int          video_fullscreen_first;
 extern uint8_t      fontdat[2048][8];
 extern uint8_t      fontdatm[2048][16];
+extern uint8_t      fontdat2[2048][8];
+extern uint8_t      fontdatm2[2048][16];
 extern uint8_t      fontdatw[512][32];
 extern uint8_t      fontdat8x12[256][16];
 extern uint8_t      fontdat12x18[256][36];
@@ -217,7 +225,7 @@ extern void video_screenshot_monitor(uint32_t *buf, int start_x, int start_y, in
 extern void video_screenshot(uint32_t *buf, int start_x, int start_y, int row_len);
 
 #ifdef _WIN32
-extern void *__cdecl (*video_copy)(void *_Dst, const void *_Src, size_t _Size);
+extern void * (__cdecl *video_copy)(void *_Dst, const void *_Src, size_t _Size);
 extern void *__cdecl video_transform_copy(void *_Dst, const void *_Src, size_t _Size);
 #else
 extern void *(*video_copy)(void *__restrict _Dst, const void *__restrict _Src, size_t _Size);
@@ -300,12 +308,15 @@ extern void xga_device_add(void);
 
 /* IBM 8514/A and clones*/
 extern void ibm8514_device_add(void);
-extern const device_t mach8_isa_device;
+extern const device_t mach8_vga_isa_device;
 extern const device_t mach32_isa_device;
 extern const device_t mach32_vlb_device;
 extern const device_t mach32_mca_device;
 extern const device_t mach32_pci_device;
 extern const device_t mach32_onboard_pci_device;
+
+/* IBM Display Adapter (PS/55) */
+extern void da2_device_add(void);
 
 /* ATi Mach64 */
 extern const device_t mach64gx_isa_device;
@@ -314,21 +325,27 @@ extern const device_t mach64gx_pci_device;
 extern const device_t mach64vt2_device;
 
 /* ATi 18800 */
-#    if defined(DEV_BRANCH) && defined(USE_VGAWONDER)
 extern const device_t ati18800_wonder_device;
-#    endif
 extern const device_t ati18800_vga88_device;
 extern const device_t ati18800_device;
 
 /* ATi 28800 */
 extern const device_t ati28800_device;
+extern const device_t ati28800_wonder1024d_xl_plus_device;
 extern const device_t ati28800k_device;
 extern const device_t ati28800k_spc4620p_device;
 extern const device_t ati28800k_spc6033p_device;
 extern const device_t compaq_ati28800_device;
-#    if defined(DEV_BRANCH) && defined(USE_XL24)
+#    ifdef USE_XL24
 extern const device_t ati28800_wonderxl24_device;
-#    endif
+#    endif /* USE_XL24 */
+
+/* Bochs */
+extern const device_t bochs_svga_device;
+
+/* Chips & Technologies */
+extern const device_t chips_69000_device;
+extern const device_t chips_69000_onboard_device;
 
 /* Cirrus Logic GD54xx */
 extern const device_t gd5401_isa_device;
@@ -342,6 +359,7 @@ extern const device_t gd5426_diamond_speedstar_pro_a1_isa_device;
 extern const device_t gd5426_vlb_device;
 extern const device_t gd5426_onboard_device;
 extern const device_t gd5428_isa_device;
+extern const device_t gd5428_vlb_onboard_device;
 extern const device_t gd5428_vlb_device;
 extern const device_t gd5428_diamond_speedstar_pro_b1_vlb_device;
 extern const device_t gd5428_boca_isa_device;
@@ -361,8 +379,9 @@ extern const device_t gd5434_onboard_pci_device;
 extern const device_t gd5434_vlb_device;
 extern const device_t gd5434_pci_device;
 extern const device_t gd5436_pci_device;
-extern const device_t gd5440_onboard_pci_device;
+extern const device_t gd5436_onboard_pci_device;
 extern const device_t gd5440_pci_device;
+extern const device_t gd5440_onboard_pci_device;
 extern const device_t gd5446_pci_device;
 extern const device_t gd5446_stb_pci_device;
 extern const device_t gd5480_pci_device;
@@ -428,18 +447,21 @@ extern const device_t ht216_32_standalone_device;
 extern const device_t im1024_device;
 extern const device_t pgc_device;
 
-#    if defined(DEV_BRANCH) && defined(USE_MGA)
 /* Matrox MGA */
 extern const device_t millennium_device;
 extern const device_t mystique_device;
 extern const device_t mystique_220_device;
-#    endif
+extern const device_t millennium_ii_device;
+#ifdef USE_G100
+extern const device_t productiva_g100_device;
+#endif /* USE_G100 */
 
 /* Oak OTI-0x7 */
 extern const device_t oti037c_device;
 extern const device_t oti067_device;
 extern const device_t oti067_acer386_device;
 extern const device_t oti067_ama932j_device;
+extern const device_t oti077_acer100t_device;
 extern const device_t oti077_device;
 
 /* Paradise/WD (S)VGA */
@@ -452,6 +474,7 @@ extern const device_t paradise_wd90c11_device;
 extern const device_t paradise_wd90c30_device;
 
 /* Realtek (S)VGA */
+extern const device_t realtek_rtg3105_device;
 extern const device_t realtek_rtg3106_device;
 
 /* S3 9XX/8XX/Vision/Trio */
@@ -472,7 +495,9 @@ extern const device_t s3_bahamas64_vlb_device;
 extern const device_t s3_bahamas64_pci_device;
 extern const device_t s3_9fx_vlb_device;
 extern const device_t s3_9fx_pci_device;
+extern const device_t s3_phoenix_trio32_onboard_vlb_device;
 extern const device_t s3_phoenix_trio32_vlb_device;
+extern const device_t s3_phoenix_trio32_onboard_pci_device;
 extern const device_t s3_phoenix_trio32_pci_device;
 extern const device_t s3_diamond_stealth_se_vlb_device;
 extern const device_t s3_diamond_stealth_se_pci_device;
@@ -480,8 +505,10 @@ extern const device_t s3_spea_mirage_p64_vlb_device;
 extern const device_t s3_phoenix_trio64_vlb_device;
 extern const device_t s3_phoenix_trio64_onboard_pci_device;
 extern const device_t s3_phoenix_trio64_pci_device;
+extern const device_t s3_stb_powergraph_64_video_vlb_device;
 extern const device_t s3_phoenix_trio64vplus_pci_device;
 extern const device_t s3_phoenix_trio64vplus_onboard_pci_device;
+extern const device_t s3_cardex_trio64vplus_pci_device;
 extern const device_t s3_mirocrystal_20sv_964_vlb_device;
 extern const device_t s3_mirocrystal_20sv_964_pci_device;
 extern const device_t s3_mirocrystal_20sd_864_vlb_device;
@@ -489,15 +516,15 @@ extern const device_t s3_phoenix_vision864_pci_device;
 extern const device_t s3_phoenix_vision864_vlb_device;
 extern const device_t s3_9fx_531_pci_device;
 extern const device_t s3_phoenix_vision868_pci_device;
-extern const device_t s3_phoenix_vision868_vlb_device;
 extern const device_t s3_diamond_stealth64_pci_device;
 extern const device_t s3_diamond_stealth64_vlb_device;
 extern const device_t s3_diamond_stealth64_964_pci_device;
 extern const device_t s3_diamond_stealth64_964_vlb_device;
+extern const device_t s3_diamond_stealth64_968_pci_device;
+extern const device_t s3_diamond_stealth64_968_vlb_device;
 extern const device_t s3_mirovideo_40sv_ergo_968_pci_device;
 extern const device_t s3_9fx_771_pci_device;
 extern const device_t s3_phoenix_vision968_pci_device;
-extern const device_t s3_phoenix_vision968_vlb_device;
 extern const device_t s3_spea_mercury_p64v_pci_device;
 extern const device_t s3_elsa_winner2000_pro_x_964_pci_device;
 extern const device_t s3_elsa_winner2000_pro_x_pci_device;
@@ -506,10 +533,13 @@ extern const device_t s3_trio64v2_dx_onboard_pci_device;
 
 /* S3 ViRGE */
 extern const device_t s3_virge_325_pci_device;
+extern const device_t s3_virge_325_onboard_pci_device;
 extern const device_t s3_diamond_stealth_2000_pci_device;
+extern const device_t s3_mirocrystal_3d_pci_device;
 extern const device_t s3_diamond_stealth_3000_pci_device;
 extern const device_t s3_stb_velocity_3d_pci_device;
 extern const device_t s3_virge_375_pci_device;
+extern const device_t s3_virge_375_onboard_pci_device;
 extern const device_t s3_diamond_stealth_2000pro_pci_device;
 extern const device_t s3_virge_385_pci_device;
 extern const device_t s3_virge_357_pci_device;
@@ -528,6 +558,7 @@ extern const device_t tgui9440_vlb_device;
 extern const device_t tgui9440_pci_device;
 extern const device_t tgui9440_onboard_pci_device;
 extern const device_t tgui9660_pci_device;
+extern const device_t tgui9660_onboard_pci_device;
 extern const device_t tgui9680_pci_device;
 
 /* IBM PS/1 (S)VGA */
@@ -536,6 +567,7 @@ extern const device_t ibm_ps1_2121_device;
 /* Trident TVGA 8900 */
 extern const device_t tvga8900b_device;
 extern const device_t tvga8900d_device;
+extern const device_t tvga8900dr_device;
 extern const device_t tvga9000b_device;
 extern const device_t nec_sv9000_device;
 

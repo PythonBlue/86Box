@@ -22,7 +22,10 @@
 #    define _BSD_SOURCE     1
 #endif
 #if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
-#    define __BSD_VISIBLE   1
+#    define __BSD_VISIBLE 1
+#endif
+#ifdef __NetBSD__
+#    define _NETBSD_VISIBLE 1
 #endif
 #include <stdio.h>
 #include <fcntl.h>
@@ -112,7 +115,7 @@ plat_serpt_write_vcon(serial_passthrough_t *dev, uint8_t data)
     if (dev->mode == SERPT_MODE_HOSTSER) {
         do {
             res = write(dev->master_fd, &data, 1);
-        } while (res == 0 || (res == -1 && (errno == EAGAIN || res == EWOULDBLOCK)));
+        } while (res == 0 || (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)));
     } else
         res = write(dev->master_fd, &data, 1);
 }
@@ -149,7 +152,7 @@ plat_serpt_set_params(void *priv)
         BAUDRATE_RANGE(dev->baudrate, 57600, 115200, B57600);
         BAUDRATE_RANGE(dev->baudrate, 115200, 0xFFFFFFFF, B115200);
 
-        term_attr.c_cflag &= CSIZE;
+        term_attr.c_cflag &= ~CSIZE;
         switch (dev->data_bits) {
             case 8:
             default:
@@ -165,13 +168,13 @@ plat_serpt_set_params(void *priv)
                 term_attr.c_cflag |= CS5;
                 break;
         }
-        term_attr.c_cflag &= CSTOPB;
+        term_attr.c_cflag &= ~CSTOPB;
         if (dev->serial->lcr & 0x04)
             term_attr.c_cflag |= CSTOPB;
 #if !defined(__linux__)
-        term_attr.c_cflag &= PARENB | PARODD;
+        term_attr.c_cflag &= ~(PARENB | PARODD);
 #else
-        term_attr.c_cflag &= PARENB | PARODD | CMSPAR;
+        term_attr.c_cflag &= ~(PARENB | PARODD | CMSPAR);
 #endif
         if (dev->serial->lcr & 0x08) {
             term_attr.c_cflag |= PARENB;

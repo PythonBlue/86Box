@@ -59,8 +59,10 @@
    listings on forums, as VIA's datasheets are not very helpful regarding those. */
 #define VIA_PIPC_586A         0x05862500
 #define VIA_PIPC_586B         0x05864700
+#define VIA_PIPC_586          0x0586
 #define VIA_PIPC_596A         0x05960900
 #define VIA_PIPC_596B         0x05962300
+#define VIA_PIPC_596          0x0596
 #define VIA_PIPC_686A         0x06861400
 #define VIA_PIPC_686B         0x06864000
 #define VIA_PIPC_8231         0x82311000
@@ -210,10 +212,9 @@ pipc_reset_hard(void *priv)
     pipc_log("PIPC: reset_hard()\n");
 
     pipc_t  *dev      = (pipc_t *) priv;
-    uint16_t old_base = (dev->ide_regs[0x20] & 0xf0) | (dev->ide_regs[0x21] << 8);
 
-    sff_bus_master_reset(dev->bm[0], old_base);
-    sff_bus_master_reset(dev->bm[1], old_base + 8);
+    sff_bus_master_reset(dev->bm[0]);
+    sff_bus_master_reset(dev->bm[1]);
 
     memset(dev->pci_isa_regs, 0, 256);
     memset(dev->ide_regs, 0, 256);
@@ -237,7 +238,8 @@ pipc_reset_hard(void *priv)
     dev->pci_isa_regs[0x4a] = 0x04;
     dev->pci_isa_regs[0x4f] = 0x03;
 
-    dev->pci_isa_regs[0x50] = (dev->local >= VIA_PIPC_686A) ? 0x0e : 0x24; /* 686A/B default value does not line up with default bits */
+    /* 686A/B default value does not line up with default bits */
+    dev->pci_isa_regs[0x50] = (dev->local >= VIA_PIPC_686A) ? 0x0e : 0x24;
     dev->pci_isa_regs[0x59] = 0x04;
     if (dev->local >= VIA_PIPC_686A)
         dev->pci_isa_regs[0x5a] = dev->pci_isa_regs[0x5f] = 0x04;
@@ -413,7 +415,9 @@ pipc_reset_hard(void *priv)
             dev->power_regs[0x34] = 0x68;
         dev->power_regs[0x40] = 0x20;
 
-        dev->power_regs[0x42] = 0x50;
+        dev->power_regs[0x42] = ((dev->local >> 16) == VIA_PIPC_586) ? 0x00 : 0x50;
+        acpi_set_irq_line(dev->acpi, 0x00);
+
         dev->power_regs[0x48] = 0x01;
 
         if (dev->local == VIA_PIPC_686B) {
@@ -566,19 +570,17 @@ pipc_ide_handlers(pipc_t *dev)
 static void
 pipc_ide_irqs(pipc_t *dev)
 {
-    int irq_mode[2] = { 0, 0 };
+    int irq_mode[2] = { IRQ_MODE_LEGACY, IRQ_MODE_LEGACY };
 
     if (dev->ide_regs[0x09] & 0x01)
-        irq_mode[0] = (dev->ide_regs[0x3d] & 0x01);
+        irq_mode[0] = (dev->ide_regs[0x3d] & 0x01) ? IRQ_MODE_PCI_IRQ_PIN : IRQ_MODE_LEGACY;
 
     if (dev->ide_regs[0x09] & 0x04)
-        irq_mode[1] = (dev->ide_regs[0x3d] & 0x01);
+        irq_mode[1] = (dev->ide_regs[0x3d] & 0x01) ? IRQ_MODE_PCI_IRQ_PIN : IRQ_MODE_LEGACY;
 
-    sff_set_irq_mode(dev->bm[0], 0, irq_mode[0]);
-    sff_set_irq_mode(dev->bm[0], 1, irq_mode[1]);
+    sff_set_irq_mode(dev->bm[0], irq_mode[0]);
 
-    sff_set_irq_mode(dev->bm[1], 0, irq_mode[0]);
-    sff_set_irq_mode(dev->bm[1], 1, irq_mode[1]);
+    sff_set_irq_mode(dev->bm[1], irq_mode[1]);
 }
 
 static void
@@ -1595,6 +1597,9 @@ pipc_reset(void *priv)
     pipc_write(pm_func, 0x48, 0x01, priv);
     pipc_write(pm_func, 0x49, 0x00, priv);
 
+    dev->power_regs[0x42] = ((dev->local >> 16) == VIA_PIPC_586) ? 0x00 : 0x50;
+    acpi_set_irq_line(dev->acpi, 0x00);
+
     pipc_write(1, 0x04, 0x80, priv);
     pipc_write(1, 0x09, 0x85, priv);
     pipc_write(1, 0x10, 0xf1, priv);
@@ -1629,8 +1634,7 @@ pipc_reset(void *priv)
 static void *
 pipc_init(const device_t *info)
 {
-    pipc_t *dev = (pipc_t *) malloc(sizeof(pipc_t));
-    memset(dev, 0, sizeof(pipc_t));
+    pipc_t *dev = (pipc_t *) calloc(1, sizeof(pipc_t));
 
     pipc_log("PIPC: init()\n");
 
@@ -1638,21 +1642,19 @@ pipc_init(const device_t *info)
     pci_add_card(PCI_ADD_SOUTHBRIDGE, pipc_read, pipc_write, dev, &dev->pci_slot);
 
     dev->bm[0] = device_add_inst(&sff8038i_device, 1);
-    sff_set_irq_mode(dev->bm[0], 0, 0);
-    sff_set_irq_mode(dev->bm[0], 1, 0);
+    sff_set_irq_mode(dev->bm[0], IRQ_MODE_LEGACY);
     sff_set_irq_pin(dev->bm[0], PCI_INTA);
 
     dev->bm[1] = device_add_inst(&sff8038i_device, 2);
-    sff_set_irq_mode(dev->bm[1], 0, 0);
-    sff_set_irq_mode(dev->bm[1], 1, 0);
+    sff_set_irq_mode(dev->bm[1], IRQ_MODE_LEGACY);
     sff_set_irq_pin(dev->bm[1], PCI_INTA);
-
-    dev->nvr = device_add(&via_nvr_device);
 
     if (dev->local == VIA_PIPC_686B)
         dev->smbus = device_add(&via_smbus_device);
     else if (dev->local >= VIA_PIPC_596A)
         dev->smbus = device_add(&piix4_smbus_device);
+
+    dev->nvr = device_add(&via_nvr_device);
 
     if (dev->local >= VIA_PIPC_596A) {
         dev->acpi = device_add(&acpi_via_596b_device);
@@ -1699,6 +1701,8 @@ pipc_init(const device_t *info)
         acpi_set_nvr(dev->acpi, dev->nvr);
 
         acpi_init_gporeg(dev->acpi, 0xff, 0xbf, 0xff, 0x7f);
+
+        acpi_set_irq_mode(dev->acpi, 0);
     }
 
     return dev;
@@ -1725,7 +1729,7 @@ const device_t via_vt82c586b_device = {
     .init          = pipc_init,
     .close         = pipc_close,
     .reset         = pipc_reset,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = NULL
@@ -1739,7 +1743,7 @@ const device_t via_vt82c596a_device = {
     .init          = pipc_init,
     .close         = pipc_close,
     .reset         = pipc_reset,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = NULL
@@ -1753,7 +1757,7 @@ const device_t via_vt82c596b_device = {
     .init          = pipc_init,
     .close         = pipc_close,
     .reset         = pipc_reset,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = NULL
@@ -1767,7 +1771,7 @@ const device_t via_vt82c686a_device = {
     .init          = pipc_init,
     .close         = pipc_close,
     .reset         = pipc_reset,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = NULL
@@ -1781,7 +1785,7 @@ const device_t via_vt82c686b_device = {
     .init          = pipc_init,
     .close         = pipc_close,
     .reset         = pipc_reset,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = NULL
@@ -1795,7 +1799,7 @@ const device_t via_vt8231_device = {
     .init          = pipc_init,
     .close         = pipc_close,
     .reset         = pipc_reset,
-    { .available = NULL },
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = NULL

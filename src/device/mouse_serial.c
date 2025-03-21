@@ -28,6 +28,7 @@
 #include <86box/serial.h>
 #include <86box/mouse.h>
 #include <86box/plat.h>
+#include <86box/version.h>
 
 #define SERMOUSE_PORT 0 /* attach to Serial0 */
 
@@ -141,7 +142,8 @@ sermouse_transmit_byte(mouse_t *dev, int do_next)
     if (dev->buf_pos == 0)
         dev->acc_time = 0.0;
 
-    serial_write_fifo(dev->serial, dev->buf[dev->buf_pos]);
+    if (dev->serial)
+        serial_write_fifo(dev->serial, dev->buf[dev->buf_pos]);
 
     if (do_next) {
         dev->buf_pos = (dev->buf_pos + 1) % dev->buf_len;
@@ -537,7 +539,7 @@ ltsermouse_process_command(mouse_t *dev)
                         [FORMAT_HEX]       = 0x04,
                         [FORMAT_MS_4BYTE]  = 0x08,         /* Guess */
                         [FORMAT_MS_WHEEL]  = 0x08 };       /* Guess */
-    const char *copr = "\r\n(C) 2023 86Box, Revision 3.0";
+    const char *copr = "\r\n(C) " COPYRIGHT_YEAR " 86Box, Revision 3.0";
 
     mouse_serial_log("ltsermouse_process_command(): %02X\n", dev->ib);
     dev->command = dev->ib;
@@ -674,7 +676,6 @@ ltsermouse_process_data(mouse_t *dev)
         case 0x2a:
             switch (dev->ib) {
                 default:
-                    mouse_serial_log("Serial mouse: Invalid period %02X, using 1200 bps\n", data);
                     fallthrough;
                 case 0x6e:
                     dev->bps = 1200;
@@ -844,8 +845,7 @@ sermouse_init(const device_t *info)
     void (*dev_write)(struct serial_s *serial, void *priv, uint8_t data);
     void (*transmit_period_callback)(struct serial_s *serial, void *priv, double transmit_period);
 
-    dev = (mouse_t *) malloc(sizeof(mouse_t));
-    memset(dev, 0x00, sizeof(mouse_t));
+    dev = (mouse_t *) calloc(1, sizeof(mouse_t));
     dev->name = info->name;
     dev->but  = device_get_config_int("buttons");
     dev->rev  = device_get_config_int("revision");
@@ -909,6 +909,8 @@ sermouse_init(const device_t *info)
     /* Tell them how many buttons we have. */
     mouse_set_buttons(dev->but);
 
+    mouse_set_poll(sermouse_poll, dev);
+
     /* Return our private data to the I/O layer. */
     return dev;
 }
@@ -916,41 +918,47 @@ sermouse_init(const device_t *info)
 static const device_config_t msssermouse_config[] = {
   // clang-format off
     {
-        .name = "port",
-        .description = "Serial Port",
-        .type = CONFIG_SELECTION,
-        .default_string = "",
-        .default_int = 0,
-        .file_filter = "",
-        .spinner = { 0 },
-        .selection = {
+        .name           = "port",
+        .description    = "Serial Port",
+        .type           = CONFIG_SELECTION,
+        .default_string = NULL,
+        .default_int    = 0,
+        .file_filter    = NULL,
+        .spinner        = { 0 },
+        .selection      = {
             { .description = "COM1", .value = 0 },
             { .description = "COM2", .value = 1 },
             { .description = "COM3", .value = 2 },
             { .description = "COM4", .value = 3 },
             { .description = ""                 }
-        }
+        },
+        .bios           = { { 0 } }
     },
     {
-        .name = "buttons",
-        .description = "Buttons",
-        .type = CONFIG_SELECTION,
-        .default_string = "",
-        .default_int = 2,
-        .file_filter = "",
-        .spinner = { 0 },
-        .selection = {
+        .name           = "buttons",
+        .description    = "Buttons",
+        .type           = CONFIG_SELECTION,
+        .default_string = NULL,
+        .default_int    = 2,
+        .file_filter    = NULL,
+        .spinner        = { 0 },
+        .selection      = {
             { .description = "Two",   .value = 2 },
             { .description = "Three", .value = 3 },
             { .description = ""                  }
-        }
+        },
+        .bios           = { { 0 } }
     },
     {
-        .name = "rts_toggle",
-        .description = "RTS toggle",
-        .type = CONFIG_BINARY,
-        .default_string = "",
-        .default_int = 0
+        .name           = "rts_toggle",
+        .description    = "RTS toggle",
+        .type           = CONFIG_BINARY,
+        .default_string = NULL,
+        .default_int    = 0,
+        .file_filter    = NULL,
+        .spinner        = { 0 },
+        .selection      = { { 0 } },
+        .bios           = { { 0 } }
     },
     { .name = "", .description = "", .type = CONFIG_END }
   // clang-format on
@@ -959,35 +967,37 @@ static const device_config_t msssermouse_config[] = {
 static const device_config_t mssermouse_config[] = {
   // clang-format off
     {
-        .name = "port",
-        .description = "Serial Port",
-        .type = CONFIG_SELECTION,
-        .default_string = "",
-        .default_int = 0,
-        .file_filter = "",
-        .spinner = { 0 },
-        .selection = {
+        .name           = "port",
+        .description    = "Serial Port",
+        .type           = CONFIG_SELECTION,
+        .default_string = NULL,
+        .default_int    = 0,
+        .file_filter    = NULL,
+        .spinner        = { 0 },
+        .selection      = {
             { .description = "COM1", .value = 0 },
             { .description = "COM2", .value = 1 },
             { .description = "COM3", .value = 2 },
             { .description = "COM4", .value = 3 },
             { .description = ""                 }
-        }
+        },
+        .bios           = { { 0 } }
     },
     {
-        .name = "buttons",
-        .description = "Buttons",
-        .type = CONFIG_SELECTION,
-        .default_string = "",
-        .default_int = 2,
-        .file_filter = "",
-        .spinner = { 0 },
-        .selection = {
+        .name           = "buttons",
+        .description    = "Buttons",
+        .type           = CONFIG_SELECTION,
+        .default_string = NULL,
+        .default_int    = 2,
+        .file_filter    = NULL,
+        .spinner        = { 0 },
+        .selection      = {
             { .description = "Two",   .value = 2 },
             { .description = "Three", .value = 3 },
             { .description = "Wheel", .value = 4 },
             { .description = ""                  }
-        }
+        },
+        .bios           = { { 0 } }
     },
     { .name = "", .description = "", .type = CONFIG_END }
   // clang-format on
@@ -996,57 +1006,64 @@ static const device_config_t mssermouse_config[] = {
 static const device_config_t ltsermouse_config[] = {
   // clang-format off
     {
-        .name = "port",
-        .description = "Serial Port",
-        .type = CONFIG_SELECTION,
-        .default_string = "",
-        .default_int = 0,
-        .file_filter = "",
-        .spinner = { 0 },
-        .selection = {
+        .name           = "port",
+        .description    = "Serial Port",
+        .type           = CONFIG_SELECTION,
+        .default_string = NULL,
+        .default_int    = 0,
+        .file_filter    = NULL,
+        .spinner        = { 0 },
+        .selection      = {
             { .description = "COM1", .value = 0 },
             { .description = "COM2", .value = 1 },
             { .description = "COM3", .value = 2 },
             { .description = "COM4", .value = 3 },
             { .description = ""                 }
-        }
+        },
+        .bios           = { { 0 } }
     },
     {
-        .name = "buttons",
-        .description = "Buttons",
-        .type = CONFIG_SELECTION,
-        .default_string = "",
-        .default_int = 2,
-        .file_filter = "",
-        .spinner = { 0 },
-        .selection = {
+        .name           = "buttons",
+        .description    = "Buttons",
+        .type           = CONFIG_SELECTION,
+        .default_string = NULL,
+        .default_int    = 2,
+        .file_filter    = NULL,
+        .spinner        = { 0 },
+        .selection      = {
             { .description = "Two",   .value = 2 },
             { .description = "Three", .value = 3 },
             { .description = ""                  }
-        }
+        },
+        .bios           = { { 0 } }
     },
     {
-        .name = "revision",
-        .description = "Revision",
-        .type = CONFIG_SELECTION,
-        .default_string = "",
-        .default_int = 3,
-        .file_filter = "",
-        .spinner = { 0 },
-        .selection = {
+        .name           = "revision",
+        .description    = "Revision",
+        .type           = CONFIG_SELECTION,
+        .default_string = NULL,
+        .default_int    = 3,
+        .file_filter    = NULL,
+        .spinner        = { 0 },
+        .selection      = {
             { .description = "LOGIMOUSE R7 1.0",  .value = 1 },
             { .description = "LOGIMOUSE R7 2.0",  .value = 2 },
             { .description = "LOGIMOUSE C7 3.0",  .value = 3 },
             { .description = "Logitech MouseMan", .value = 4 },
             { .description = ""                              }
-        }
+        },
+        .bios           = { { 0 } }
     },
     {
-        .name = "rts_toggle",
-        .description = "Microsoft-compatible RTS toggle",
-        .type = CONFIG_BINARY,
-        .default_string = "",
-        .default_int = 0
+        .name           = "rts_toggle",
+        .description    = "RTS toggle",
+        .type           = CONFIG_BINARY,
+        .default_string = NULL,
+        .default_int    = 0,
+        .file_filter    = NULL,
+        .spinner        = { 0 },
+        .selection      = { { 0 } },
+        .bios           = { { 0 } }
     },
     { .name = "", .description = "", .type = CONFIG_END }
   // clang-format on
@@ -1060,7 +1077,7 @@ const device_t mouse_mssystems_device = {
     .init          = sermouse_init,
     .close         = sermouse_close,
     .reset         = NULL,
-    { .poll = sermouse_poll },
+    .available     = NULL,
     .speed_changed = sermouse_speed_changed,
     .force_redraw  = NULL,
     .config        = msssermouse_config
@@ -1074,7 +1091,7 @@ const device_t mouse_msserial_device = {
     .init          = sermouse_init,
     .close         = sermouse_close,
     .reset         = NULL,
-    { .poll = sermouse_poll },
+    .available     = NULL,
     .speed_changed = sermouse_speed_changed,
     .force_redraw  = NULL,
     .config        = mssermouse_config
@@ -1088,7 +1105,7 @@ const device_t mouse_ltserial_device = {
     .init          = sermouse_init,
     .close         = sermouse_close,
     .reset         = NULL,
-    { .poll = sermouse_poll },
+    .available     = NULL,
     .speed_changed = sermouse_speed_changed,
     .force_redraw  = NULL,
     .config        = ltsermouse_config

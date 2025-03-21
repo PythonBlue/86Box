@@ -15,6 +15,8 @@
 
 #include "qt_renderercommon.hpp"
 
+#include <atomic>
+
 namespace Ui {
 class RendererStack;
 }
@@ -59,7 +61,6 @@ public:
         OpenGLES,
         OpenGL3,
         Vulkan,
-        Direct3D9,
         None = -1
     };
     void switchRenderer(Renderer renderer);
@@ -70,6 +71,8 @@ public:
     void reloadOptions() const { return rendererWindow->reloadOptions(); }
     /* Returns options dialog for current renderer */
     QDialog *getOptions(QWidget *parent) { return rendererWindow ? rendererWindow->getOptions(parent) : nullptr; }
+    /* Reload the renderer itself */
+    bool reloadRendererOption() { return rendererWindow ? rendererWindow->reloadRendererOption() : false; }
 
     void setFocusRenderer();
     void onResize(int width, int height);
@@ -81,13 +84,10 @@ public:
 
 signals:
     void blitToRenderer(int buf_idx, int x, int y, int w, int h);
-    void blit(int x, int y, int w, int h);
     void rendererChanged();
 
 public slots:
-    void blitCommon(int x, int y, int w, int h);
-    void blitRenderer(int x, int y, int w, int h);
-    void blitDummy(int x, int y, int w, int h);
+    void blit(int x, int y, int w, int h);
 
 private:
     void createRenderer(Renderer renderer);
@@ -107,13 +107,13 @@ private:
     int isMouseDown     = 0;
     int m_monitor_index = 0;
 
-    Renderer current_vid_api = Renderer::None;
-
     std::vector<std::tuple<uint8_t *, std::atomic_flag *>> imagebufs;
 
     RendererCommon          *rendererWindow { nullptr };
     std::unique_ptr<QWidget> current;
-    std::atomic<bool>        directBlitting { false };
+
+    std::atomic_bool rendererTakesScreenshots;
+    std::atomic_bool switchInProgress{false};
 };
 
 #endif // QT_RENDERERCONTAINER_HPP

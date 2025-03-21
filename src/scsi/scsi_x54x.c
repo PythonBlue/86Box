@@ -103,7 +103,7 @@ x54x_irq(x54x_t *dev, int set)
             else
                 picintc(1 << irq);
         }
-    }    
+    }
 }
 
 static void
@@ -287,10 +287,9 @@ x54x_bios_scsi_command(scsi_device_t *dev, uint8_t *cdb, uint8_t *buf, int len, 
 static uint8_t
 x54x_bios_read_capacity(scsi_device_t *sd, uint8_t *buf, int transfer_size)
 {
-    uint8_t *cdb;
+    uint8_t *cdb = (uint8_t *) malloc(12);;
     uint8_t  ret;
 
-    cdb = (uint8_t *) malloc(12);
     memset(cdb, 0, 12);
     cdb[0] = GPCMD_READ_CDROM_CAPACITY;
 
@@ -305,10 +304,9 @@ x54x_bios_read_capacity(scsi_device_t *sd, uint8_t *buf, int transfer_size)
 static uint8_t
 x54x_bios_inquiry(scsi_device_t *sd, uint8_t *buf, int transfer_size)
 {
-    uint8_t *cdb;
+    uint8_t *cdb = (uint8_t *) malloc(12);
     uint8_t  ret;
 
-    cdb = (uint8_t *) malloc(12);
     memset(cdb, 0, 12);
     cdb[0] = GPCMD_INQUIRY;
     cdb[4] = 36;
@@ -324,14 +322,13 @@ x54x_bios_inquiry(scsi_device_t *sd, uint8_t *buf, int transfer_size)
 static uint8_t
 x54x_bios_command_08(scsi_device_t *sd, uint8_t *buffer, int transfer_size)
 {
-    uint8_t *rcbuf;
+    uint8_t *rcbuf = (uint8_t *) malloc(8);
     uint8_t  ret;
     int      i;
 
     memset(buffer, 0x00, 6);
 
-    rcbuf = (uint8_t *) malloc(8);
-    ret   = x54x_bios_read_capacity(sd, rcbuf, transfer_size);
+    ret = x54x_bios_read_capacity(sd, rcbuf, transfer_size);
     if (ret) {
         free(rcbuf);
         return ret;
@@ -353,13 +350,12 @@ x54x_bios_command_08(scsi_device_t *sd, uint8_t *buffer, int transfer_size)
 static int
 x54x_bios_command_15(scsi_device_t *sd, uint8_t *buffer, int transfer_size)
 {
-    uint8_t *inqbuf;
+    uint8_t *inqbuf = (uint8_t *) malloc(36);
     uint8_t *rcbuf;
     uint8_t  ret;
 
     memset(buffer, 0x00, 6);
 
-    inqbuf = (uint8_t *) malloc(36);
     ret    = x54x_bios_inquiry(sd, inqbuf, transfer_size);
     if (ret) {
         free(inqbuf);
@@ -466,6 +462,7 @@ x54x_bios_command(x54x_t *x54x, uint8_t max_id, BIOSCMD *cmd, int8_t islba)
                 }
 
                 return 0;
+                break;
 
             case 0x02: /* Read Desired Sectors to Memory */
             case 0x03: /* Write Desired Sectors from Memory */
@@ -1341,24 +1338,27 @@ x54x_in(uint16_t port, void *priv)
             if (dev->flags & X54X_INT_GEOM_WRITABLE)
                 ret = dev->Geometry;
             else {
-                switch (dev->Geometry) {
-                    default:
-                    case 0:
-                        ret = 'A';
-                        break;
-                    case 1:
-                        ret = 'D';
-                        break;
-                    case 2:
-                        ret = 'A';
-                        break;
-                    case 3:
-                        ret = 'P';
-                        break;
-                }
-                ret ^= 1;
-                dev->Geometry++;
-                dev->Geometry &= 0x03;
+                if (dev->flags & X54X_HAS_SIGNATURE) {
+                    switch (dev->Geometry) {
+                        default:
+                        case 0:
+                            ret = 'A';
+                            break;
+                        case 1:
+                            ret = 'D';
+                            break;
+                        case 2:
+                            ret = 'A';
+                            break;
+                        case 3:
+                            ret = 'P';
+                            break;
+                    }
+                    ret ^= 1;
+                    dev->Geometry++;
+                    dev->Geometry &= 0x03;
+                } else
+                    ret = 0xff;
                 break;
             }
             break;
@@ -1892,13 +1892,11 @@ x54x_mem_disable(x54x_t *dev)
 void *
 x54x_init(const device_t *info)
 {
-    x54x_t *dev;
+    x54x_t *dev = calloc(1, sizeof(x54x_t));
 
     /* Allocate control block and set up basic stuff. */
-    dev = malloc(sizeof(x54x_t));
     if (dev == NULL)
         return dev;
-    memset(dev, 0x00, sizeof(x54x_t));
     dev->type = info->local;
 
     dev->card_bus       = info->flags;

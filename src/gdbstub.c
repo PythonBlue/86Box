@@ -40,6 +40,7 @@
 #include <86box/86box.h>
 #include "cpu.h"
 #include "x86seg.h"
+#include "x87_sf.h"
 #include "x87.h"
 #include "x87_ops_conv.h"
 #include <86box/io.h>
@@ -222,8 +223,10 @@ static char      target_xml[]   = /* QEMU gdb-xml/i386-32bit.xml with modificati
             "<reg name=\"fs\" bitsize=\"16\" type=\"int32\"/>"
             "<reg name=\"gs\" bitsize=\"16\" type=\"int32\"/>"
             ""
+#if 0
             "<reg name=\"fs_base\" bitsize=\"32\" type=\"int32\"/>"
             "<reg name=\"gs_base\" bitsize=\"32\" type=\"int32\"/>"
+#endif
             ""
             "<flags id=\"i386_cr0\" size=\"4\">"
                 "<field name=\"PG\" start=\"31\" end=\"31\"/>"
@@ -341,7 +344,7 @@ static gdbstub_client_t *first_client = NULL;
 static gdbstub_client_t *last_client = NULL;
 static mutex_t          *client_list_mutex;
 
-static void (*cpu_exec_shadow)(int cycs);
+static void (*cpu_exec_shadow)(int32_t cycs);
 static gdbstub_breakpoint_t *first_swbreak = NULL;
 static gdbstub_breakpoint_t *first_hwbreak = NULL;
 static gdbstub_breakpoint_t *first_rwatch = NULL;
@@ -363,13 +366,7 @@ gdbstub_break(void)
 static void
 gdbstub_jump(uint32_t new_pc)
 {
-    /* Nasty hack; qemu always uses the full 32-bit EIP internally... */
-    if (cpu_state.op32 || ((new_pc >= cs) && (new_pc < (cs + 65536)))) {
-        cpu_state.pc = new_pc - cs;
-    } else {
-        loadseg((new_pc >> 4) & 0xf000, &cpu_state.seg_cs);
-        cpu_state.pc = new_pc & 0xffff;
-    }
+    cpu_state.pc = new_pc - cs;
     flushmmucache();
 }
 
@@ -548,10 +545,12 @@ gdbstub_client_write_reg(int index, uint8_t *buf)
             flushmmucache();
             break;
 
+#if 0
         case GDB_REG_FS_BASE ... GDB_REG_GS_BASE:
             /* Do what qemu does and just load the base. */
             segment_regs[(index - 16) + (GDB_REG_FS - GDB_REG_CS)]->base = *((uint32_t *) buf);
             break;
+#endif
 
         case GDB_REG_CR0 ... GDB_REG_CR4:
             *cr_regs[index - GDB_REG_CR0] = *((uint32_t *) buf);
@@ -627,10 +626,10 @@ gdbstub_client_respond(gdbstub_client_t *client)
     /* Send response packet. */
     client->response[client->response_pos] = '\0';
 #ifdef ENABLE_GDBSTUB_LOG
-    i                     = client->response[995]; /* pclog_ex buffer too small */
-    client->response[995] = '\0';
+    i                     = client->response[994]; /* pclog_ex buffer too small */
+    client->response[994] = '\0';
     gdbstub_log("GDB Stub: Sending response: %s\n", client->response);
-    client->response[995] = i;
+    client->response[994] = i;
 #endif
     send(client->socket, "$", 1, 0);
     send(client->socket, client->response, client->response_pos, 0);
@@ -1096,7 +1095,7 @@ e00:
             } else if (!strcmp(client->response, "C")) {
                 FAST_RESPONSE("QC1");
             } else if (!strcmp(client->response, "fThreadInfo")) {
-                FAST_RESPONSE("m 1");
+                FAST_RESPONSE("m1");
             } else if (!strcmp(client->response, "sThreadInfo")) {
                 FAST_RESPONSE("l");
             } else if (!strcmp(client->response, "Rcmd")) {
@@ -1344,7 +1343,7 @@ unknown:
                         /* Flag this watchpoint's corresponding pages as having a watchpoint. */
                         k = (breakpoint->end - 1) >> MEM_GRANULARITY_BITS;
                         for (i = breakpoint->addr >> MEM_GRANULARITY_BITS; i <= k; i++)
-                            gdbstub_watch_pages[i >> 6] |= (1 << (i & 63));
+                            gdbstub_watch_pages[i >> 6] |= (1ULL << (i & 63));
 
                         breakpoint = breakpoint->next;
                     } else {
@@ -1369,7 +1368,7 @@ end:
 }
 
 static void
-gdbstub_cpu_exec(int cycs)
+gdbstub_cpu_exec(int32_t cycs)
 {
     /* Flag that we're now in the debugger context to avoid triggering watchpoints. */
     in_gdbstub = 1;
@@ -1514,6 +1513,7 @@ gdbstub_client_thread(void *priv)
                 case '$': /* packet start */
                     /* Wait for any existing packets to be processed. */
                     thread_wait_event(client->processed_event, -1);
+                    thread_set_event(client->processed_event);
 
                     client->packet_pos = 0;
                     break;
@@ -1531,6 +1531,7 @@ gdbstub_client_thread(void *priv)
                 case 0x03: /* break */
                     /* Wait for any existing packets to be processed. */
                     thread_wait_event(client->processed_event, -1);
+                    thread_set_event(client->processed_event);
 
                     /* Break immediately. */
                     gdbstub_log("GDB Stub: Break requested\n");
@@ -1540,6 +1541,7 @@ gdbstub_client_thread(void *priv)
                 default:
                     /* Wait for any existing packets to be processed, just in case. */
                     thread_wait_event(client->processed_event, -1);
+                    thread_set_event(client->processed_event);
 
                     if (client->packet_pos < (sizeof(client->packet) - 1)) {
                         /* Append byte to the packet. */
@@ -1748,8 +1750,10 @@ gdbstub_mem_access(uint32_t *addrs, int access)
         if (watchpoint) {
             /* Check if any component of this address is within the breakpoint's range. */
             for (i = 0; i < width; i++) {
-                if ((addrs[i] >= watchpoint->addr) && (addrs[i] < watchpoint->end))
+                if ((addrs[i] >= watchpoint->addr) && (addrs[i] < watchpoint->end)) {
+                    watch_addr = addrs[i];
                     break;
+                }
             }
             if (i < width) {
                 gdbstub_log("GDB Stub: %s watchpoint at %08X\n", (access & GDBSTUB_MEM_AWATCH) ? "Access" : ((access & GDBSTUB_MEM_WRITE) ? "Write" : "Read"), watch_addr);

@@ -126,6 +126,14 @@ ega_render_text(ega_t *ega)
         const bool blinked       = ega->blink & 0x10;
         uint32_t  *p             = &buffer32->line[ega->displine + ega->y_add][ega->x_add];
 
+        /* Compensate for 8dot scroll */
+        if (!seq9dot) {
+            for (int x = 0; x < dotwidth; x++) {
+                p[x] = ega->overscan_color;
+            }
+            p += dotwidth;
+        }
+
         for (int x = 0; x < (ega->hdisp + ega->scrollcache); x += charwidth) {
             uint32_t addr = ega->remap_func(ega, ega->ma) & ega->vrammask;
 
@@ -191,13 +199,24 @@ ega_render_graphics(ega_t *ega)
     const bool    attrblink   = ((ega->attrregs[0x10] & 8) != 0);
     const bool    blinked     = ega->blink & 0x10;
     const bool    crtcreset   = ((ega->crtc[0x17] & 0x80) == 0);
+    const bool    seq9dot       = ((ega->seqregs[1] & 1) == 0);
     const bool    seqoddeven  = ((ega->seqregs[1] & 4) != 0);
-    const uint8_t blinkmask   = (attrblink && blinked ? 0x8 : 0x0);
+    const uint8_t blinkmask   = (attrblink ? 0x8 : 0x0);
+    const uint8_t blinkval    = (attrblink && blinked ? 0x8 : 0x0);
     uint32_t     *p           = &buffer32->line[ega->displine + ega->y_add][ega->x_add];
     const int     dwshift     = doublewidth ? 1 : 0;
     const int     dotwidth    = 1 << dwshift;
     const int     charwidth   = dotwidth * 8;
     int           secondcclk  = 0;
+
+    /* Compensate for 8dot scroll */
+    if (!seq9dot) {
+        for (int x = 0; x < dotwidth; x++) {
+            p[x] = ega->overscan_color;
+        }
+        p += dotwidth;
+    }
+
     for (int x = 0; x <= (ega->hdisp + ega->scrollcache); x += charwidth) {
         uint32_t addr = ega->remap_func(ega, ega->ma) & ega->vrammask;
 
@@ -236,8 +255,14 @@ ega_render_graphics(ega_t *ega)
                 uint8_t   dat     = (edatlookup[(edat[0] >> inshift) & 3][(edat[1] >> inshift) & 3])
                     | (edatlookup[(edat[2] >> inshift) & 3][(edat[3] >> inshift) & 3] << 2);
                 // FIXME: Confirm blink behaviour is actually XOR on real hardware
-                uint32_t p0 = ega->pallook[ega->egapal[((dat >> 4) & ega->plane_mask) ^ blinkmask]];
-                uint32_t p1 = ega->pallook[ega->egapal[(dat & ega->plane_mask) ^ blinkmask]];
+                uint32_t c0 = (dat >> 4) & 0xF;
+                uint32_t c1 = dat & 0xF;
+                c0 = ((c0 & ega->plane_mask & ~blinkmask) |
+                     ((c0 | ~ega->plane_mask) & blinkmask & blinkval)) ^ blinkmask;
+                c1 = ((c1 & ega->plane_mask & ~blinkmask) |
+                     ((c1 | ~ega->plane_mask) & blinkmask & blinkval)) ^ blinkmask;
+                uint32_t p0 = ega->pallook[ega->egapal[c0]];
+                uint32_t p1 = ega->pallook[ega->egapal[c1]];
                 for (int subx = 0; subx < dotwidth; subx++)
                     p[outoffs + subx] = p0;
                 for (int subx = 0; subx < dotwidth; subx++)
