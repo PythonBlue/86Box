@@ -309,6 +309,9 @@ MediaHistoryManager::pathAdjustSingle(QString checked_path)
     if (file_info.filePath().isEmpty() || current_usr_path.isEmpty() || file_info.isRelative()) {
         return checked_path;
     }
+    if (file_info.filePath().startsWith(current_usr_path)) {
+        checked_path = file_info.filePath().remove(current_usr_path);
+    }
     return checked_path;
 }
 

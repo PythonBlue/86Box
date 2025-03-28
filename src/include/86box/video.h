@@ -340,6 +340,9 @@ extern const device_t compaq_ati28800_device;
 extern const device_t ati28800_wonderxl24_device;
 #    endif /* USE_XL24 */
 
+#ifdef USE_R100
+extern const device_t ati_r100_device;
+#endif
 /* Bochs */
 extern const device_t bochs_svga_device;
 

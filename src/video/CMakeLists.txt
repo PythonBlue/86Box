@@ -82,6 +82,11 @@ add_library(vid OBJECT
     nv/nv_rivatimer.c
 )
 
+if(R100)
+    target_compile_definitions(vid PRIVATE USE_R100)
+    target_sources(vid PRIVATE vid_ati_r100.c)
+endif()
+
 if(G100)
     target_compile_definitions(vid PRIVATE USE_G100)
 endif()

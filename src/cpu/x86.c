@@ -370,9 +370,24 @@ reset_common(int hard)
     if (!is286)
         reset_808x(hard);
 
+    cpu_state.mxcsr = 0x1f80;
     in_lock    = 0;
 
     cpu_cpurst_on_sr = 0;
+
+    for(int i = 0; i < 16; i++)
+    {
+        cpu_state.XMM[i].q[0] = 0;
+        cpu_state.XMM[i].q[1] = 0;
+        cpu_state.regs_high[i] = 0;
+    }
+
+    for(int i = 0; i < 8; i++)
+    {
+        cpu_state.regs64[i].l = 0;
+    }
+    
+    cpu_state.pc_high = cpu_state.oldpc_high = 0;
 }
 
 /* Hard reset. */

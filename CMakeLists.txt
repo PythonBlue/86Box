@@ -35,10 +35,10 @@ if(MUNT_EXTERNAL)
     list(APPEND VCPKG_MANIFEST_FEATURES "munt")
 endif()
 
-project(86Box
+project(PCBox
     VERSION 4.3
     DESCRIPTION "Emulator of x86-based systems"
-    HOMEPAGE_URL "https://86box.net"
+    HOMEPAGE_URL "https://pcbox-emu.xyz/"
     LANGUAGES C CXX)
 
 include(CPack)
@@ -170,24 +170,28 @@ endif()
 
 # Development branch features
 #
-#                      Option         Description                                Def.  Condition     Otherwise
-#                      ------         -----------                                ----  ------------  ---------
-cmake_dependent_option(AMD_K5         "AMD K5"                                   ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(AN430TX        "Intel AN430TX"                            ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(CDROM_MITSUMI  "Mitsumi CDROM"                            ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(G100           "Matrox Productiva G100"                   ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(GUSMAX         "Gravis UltraSound MAX"                    ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(ISAMEM_RAMPAGE "AST Rampage"                              ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(ISAMEM_IAB     "Intel Above Board"                        ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(ISAMEM_BRAT    "BocaRAM/AT"                               ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(LASERXT        "VTech Laser XT"                           ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(OLIVETTI       "Olivetti M290"                            ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(OPEN_AT        "OpenAT"                                   ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(OPL4ML         "OPL4-ML daughterboard"                    ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(PCL            "Generic PCL5e Printer"                    ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(SIO_DETECT     "Super I/O Detection Helper"               ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(WACOM          "Wacom Input Devices"                      ON    "DEV_BRANCH"  OFF)
-cmake_dependent_option(XL24           "ATI VGA Wonder XL24 (ATI-28800-6)"        ON    "DEV_BRANCH"  OFF)
+#                      Option         Description                                   Def.    Condition       Otherwise
+#                      ------         -----------                                   ----    ---------       ---------
+cmake_dependent_option(AMD_K5         "AMD K5"                                      ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(AN430TX        "Intel AN430TX"                               ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(CDROM_MITSUMI  "Mitsumi CDROM"                               ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(G100           "Matrox Productiva G100"                      ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(GENERIC_INTEL  "Generic Intel CPU type"                      ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(GUSMAX         "Gravis UltraSound MAX"                       ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(ISAMEM_RAMPAGE "AST Rampage"                                 ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(ISAMEM_IAB     "Intel Above Board"                           ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(ISAMEM_BRAT    "BocaRAM/AT"                                  ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(LASERXT        "VTech Laser XT"                              ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(OLIVETTI       "Olivetti M290"                               ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(OPEN_AT        "OpenAT"                                      ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(OPL4ML         "OPL4-ML daughterboard"                       ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(R100           "ATI R100"                                    OFF     "DEV_BRANCH"    OFF)
+cmake_dependent_option(RIVA128        "Nvidia Riva 128"                             ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(RIVATNT        "Nvidia Riva TNT"                             ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(PCL            "Generic PCL5e Printer"                       ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(SIO_DETECT     "Super I/O Detection Helper"                  ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(WACOM          "Wacom Input Devices"                         ON      "DEV_BRANCH"    OFF)
+cmake_dependent_option(XL24           "ATI VGA Wonder XL24 (ATI-28800-6)"           ON      "DEV_BRANCH"    OFF)
 
 # Ditto but for Qt
 if(QT)

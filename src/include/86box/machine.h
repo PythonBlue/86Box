@@ -117,6 +117,7 @@
 #define MACHINE_IDE_QUA           0x20000000 /* sys has int qua IDE/ATAPI */
 #define MACHINE_SCSI              0x40000000 /* sys has int SCSI */
 #define MACHINE_USB               0x80000000 /* sys has int USB */
+#define MACHINE_COREBOOT         0x100000000 /* sys has coreboot BIOS */
 /* Combined flags. */
 #define MACHINE_LPT               (MACHINE_LPT-PRI | MACHINE_LPT_SEC | \
                                    MACHINE_LPT_TER | MACHINE_LPT_QUA)
@@ -186,8 +187,9 @@ enum {
     MACHINE_TYPE_SLOT1_370  = 21,
     MACHINE_TYPE_SLOT2      = 22,
     MACHINE_TYPE_SOCKET370  = 23,
-    MACHINE_TYPE_MISC       = 24,
-    MACHINE_TYPE_MAX        = 25
+    MACHINE_TYPE_SLOTA      = 24,
+    MACHINE_TYPE_MISC       = 25,
+    MACHINE_TYPE_MAX        = 26
 };
 
 enum {
@@ -207,6 +209,7 @@ enum {
     MACHINE_CHIPSET_ALI_ALADDIN_IV_PLUS,
     MACHINE_CHIPSET_ALI_ALADDIN_V,
     MACHINE_CHIPSET_ALI_ALADDIN_PRO_II,
+    MACHINE_CHIPSET_AMD_750,
     MACHINE_CHIPSET_SCAT,
     MACHINE_CHIPSET_SCAT_SX,
     MACHINE_CHIPSET_NEAT,
@@ -233,6 +236,7 @@ enum {
     MACHINE_CHIPSET_INTEL_440BX,
     MACHINE_CHIPSET_INTEL_440ZX,
     MACHINE_CHIPSET_INTEL_440GX,
+    MACHINE_CHIPSET_INTEL_I815EP,
     MACHINE_CHIPSET_OPTI_283,
     MACHINE_CHIPSET_OPTI_291,
     MACHINE_CHIPSET_OPTI_381,
@@ -318,7 +322,7 @@ typedef struct _machine_ {
     uint32_t             (*gpio_acpi_handler)(uint8_t write, uint32_t val);
     const machine_cpu_t    cpu;
     uintptr_t              bus_flags;
-    uintptr_t              flags;
+    uint64_t               flags;
     const machine_memory_t ram;
     int                    ram_granularity;
     int                    nvrmask;
@@ -814,8 +818,10 @@ extern int machine_at_ma30d_init(const machine_t *);
 extern int machine_at_p6i440e2_init(const machine_t *);
 
 extern int machine_at_p2bls_init(const machine_t *);
+extern int machine_at_p2bls_coreboot_init(const machine_t *);
 extern int machine_at_lgibmx7g_init(const machine_t *);
 extern int machine_at_p3bf_init(const machine_t *);
+extern int machine_at_p3bf_coreboot_init(const machine_t *);
 extern int machine_at_bf6_init(const machine_t *);
 extern int machine_at_bx6_init(const machine_t *);
 extern int machine_at_ax6bc_init(const machine_t *);
@@ -859,6 +865,9 @@ extern int machine_at_p6bap_init(const machine_t *);
 extern int machine_at_p6bat_init(const machine_t *);
 extern int machine_at_prosignias31x_bx_init(const machine_t *);
 extern int machine_at_7sbb_init(const machine_t *);
+
+/* m_at_slota.c */
+extern int machine_at_k7m_init(const machine_t *);
 
 /* m_at_misc.c */
 extern int machine_at_vpc2007_init(const machine_t *);

@@ -92,6 +92,8 @@ struct
 
     [IREG_rm_mod_reg] = { REG_DWORD,         &cpu_state.rm_data.rm_mod_reg_data, REG_INTEGER, REG_PERMANENT},
 
+    [IREG_sse_xmm] = { REG_DWORD,        &cpu_state.sse_xmm,                 REG_INTEGER, REG_PERMANENT},
+
 #ifdef USE_ACYCS
     [IREG_acycs] = { REG_DWORD,         &acycs,                             REG_INTEGER, REG_PERMANENT},
 #endif

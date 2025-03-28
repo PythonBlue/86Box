@@ -520,7 +520,7 @@ fastreadw_fetch(uint32_t a)
 #    else
         return *((uint16_t *) &pccache2[a]);
 #    endif
-    t = getpccache(a);
+    t = getpccache_execute(a);
     if (cpu_state.abrt)
         return 0;
 
@@ -548,7 +548,7 @@ fastreadl_fetch(uint32_t a)
 #    endif
     if ((a & 0xFFF) < 0xFFD) {
         if ((a >> 12) != pccache) {
-            t = getpccache(a);
+            t = getpccache_execute(a);
             if (cpu_state.abrt)
                 return 0;
             pccache2 = t;

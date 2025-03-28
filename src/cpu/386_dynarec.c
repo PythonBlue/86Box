@@ -25,6 +25,7 @@
 #include <86box/mem.h>
 #include <86box/nmi.h>
 #include <86box/pic.h>
+#include <86box/random.h>
 #include <86box/timer.h>
 #include <86box/fdd.h>
 #include <86box/fdc.h>
@@ -167,6 +168,65 @@ fetch_ea_16_long(uint32_t rmdat)
     }
 }
 
+static __inline void
+fetch_ea_64_long(uint32_t rmdat)
+{
+    eal_r = eal_w = NULL;
+    easeg         = cpu_state.ea_seg->base;
+    if ((cpu_rm == 4) || (cpu_rm == 0x14) || (cpu_rm == 0x1c)) {
+        uint8_t sib = rmdat >> 8;
+
+        switch (cpu_mod) {
+            case 0:
+                cpu_state.eaaddr = cpu_state.regs[sib & 7].l;
+                cpu_state.pc++;
+                break;
+            case 1:
+                cpu_state.pc++;
+                cpu_state.eaaddr = ((uint32_t) (int8_t) getbyte()) + cpu_state.regs[sib & 7].l;
+                break;
+            case 2:
+                cpu_state.eaaddr = (fastreadl(cs + cpu_state.pc + 1)) + cpu_state.regs[sib & 7].l;
+                cpu_state.pc += 5;
+                break;
+        }
+        /*SIB byte present*/
+        if ((sib & 7) == 5 && !cpu_mod)
+            cpu_state.eaaddr = getlong();
+        else if ((sib & 6) == 4 && !cpu_state.ssegs) {
+            easeg            = ss;
+            cpu_state.ea_seg = &cpu_state.seg_ss;
+        }
+        if (((sib >> 3) & 7) != 4)
+            cpu_state.eaaddr += cpu_state.regs[(sib >> 3) & 7].l << (sib >> 6);
+    } else {
+        cpu_state.eaaddr = cpu_state.regs[cpu_rm].l;
+        if (cpu_mod) {
+            if (cpu_rm == 5 && !cpu_state.ssegs) {
+                easeg            = ss;
+                cpu_state.ea_seg = &cpu_state.seg_ss;
+            }
+            if (cpu_mod == 1) {
+                cpu_state.eaaddr += ((uint32_t) (int8_t) (rmdat >> 8));
+                cpu_state.pc++;
+            } else {
+                cpu_state.eaaddr += getlong();
+            }
+        } else if (cpu_rm == 5) {
+            //RIP-relative addressing
+            if(!(use32 & 0x200)) cpu_state.eaaddr = (cpu_state.pc | ((uint64_t)cpu_state.pc_high << 32)) + getlong();
+            else cpu_state.eaaddr = cpu_state.pc + getlong();
+        }
+    }
+    if (easeg != 0xFFFFFFFF && ((easeg + cpu_state.eaaddr) & 0xFFF) <= 0xFFC) {
+        uint32_t addr = easeg + cpu_state.eaaddr;
+        if (readlookup2[addr >> 12] != (uintptr_t) -1)
+            eal_r = (uint32_t *) (readlookup2[addr >> 12] + addr);
+        if (writelookup2[addr >> 12] != (uintptr_t) -1)
+            eal_w = (uint32_t *) (writelookup2[addr >> 12] + addr);
+    }
+}
+
 #define fetch_ea_16(rmdat)       \
     cpu_state.pc++;              \
     cpu_mod = (rmdat >> 6) & 3;  \
@@ -184,6 +244,17 @@ fetch_ea_16_long(uint32_t rmdat)
     cpu_rm  = rmdat & 7;         \
     if (cpu_mod != 3) {          \
         fetch_ea_32_long(rmdat); \
+    }                            \
+    if (cpu_state.abrt)          \
+    return 1
+
+#define fetch_ea_64(rmdat)       \
+    cpu_state.pc++;              \
+    cpu_mod = (rmdat >> 6) & 3;  \
+    cpu_reg = ((rmdat >> 3) & 7) | ((cpu_state.rex_byte & 4) << 1) | (cpu_state.rex_present << 4);  \
+    cpu_rm  = (rmdat & 7) | ((cpu_state.rex_byte & 1) << 3) | (cpu_state.rex_present << 4);         \
+    if (cpu_mod != 3) {          \
+        fetch_ea_64_long(rmdat); \
     }                            \
     if (cpu_state.abrt)          \
     return 1
@@ -314,6 +385,7 @@ exec386_dynarec_int(void)
             cpu_state.eflags &= ~(RF_FLAG);
 #    endif
             x86_opcodes[(opcode | cpu_state.op32) & 0x3ff](fetchdat);
+            cpu_state.sse_xmm = 0;
         }
 
 #    ifndef USE_NEW_DYNAREC
@@ -666,6 +738,7 @@ exec386_dynarec_dyn(void)
                 cpu_state.pc++;
 
                 x86_opcodes[(opcode | cpu_state.op32) & 0x3ff](fetchdat);
+                cpu_state.sse_xmm = 0;
 
                 if (x86_was_reset)
                     break;
@@ -937,6 +1010,7 @@ exec386(int32_t cycs)
                 cpu_state.eflags &= ~(RF_FLAG);
 #endif
                 x86_opcodes[(opcode | cpu_state.op32) & 0x3ff](fetchdat);
+                cpu_state.sse_xmm = 0;
                 if (x86_was_reset)
                     break;
             }

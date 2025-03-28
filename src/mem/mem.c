@@ -23,6 +23,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <wchar.h>
+#include <errno.h>
 #define HAVE_STDARG_H
 #include <86box/86box.h>
 #include <86box/version.h>
@@ -137,6 +138,10 @@ static uint8_t       _mem_wp[MEM_MAPPINGS_NO];
 static uint8_t       _mem_wp_bus[MEM_MAPPINGS_NO];
 static uint8_t        ff_pccache[4] = { 0xff, 0xff, 0xff, 0xff };
 static mem_state_t    _mem_state[MEM_MAPPINGS_NO];
+
+static uint8_t       *mtrr_areas[MEM_MAPPINGS_NO];
+static uint8_t        mtrr_area_refcounts[MEM_MAPPINGS_NO];
+
 static uint32_t       remap_start_addr;
 static uint32_t       remap_start_addr2;
 #if (!(defined __amd64__ || defined _M_X64 || defined __aarch64__ || defined _M_ARM64))
@@ -305,6 +310,7 @@ mem_flush_write_page(uint32_t addr, uint32_t virt)
 
 #define mmutranslate_read(addr)  mmutranslatereal(addr, 0)
 #define mmutranslate_write(addr) mmutranslatereal(addr, 1)
+#define mmutranslate_execute(addr) mmutranslatereal(addr, 2)
 #define rammap(x)                ((uint32_t *) (_mem_exec[(x) >> MEM_GRANULARITY_BITS]))[((x) >> 2) & MEM_GRANULARITY_QMASK]
 #define rammap64(x)              ((uint64_t *) (_mem_exec[(x) >> MEM_GRANULARITY_BITS]))[((x) >> 3) & MEM_GRANULARITY_PMASK]
 
@@ -326,7 +332,7 @@ mmutranslatereal_normal(uint32_t addr, int rw)
         temp &= 1;
         if (CPL == 3)
             temp |= 4;
-        if (rw)
+        if (rw == 1)
             temp |= 2;
         cpu_state.abrt = ABRT_PF;
         abrt_error     = temp;
@@ -335,12 +341,13 @@ mmutranslatereal_normal(uint32_t addr, int rw)
 
     if ((temp & 0x80) && (cr4 & CR4_PSE)) {
         /*4MB page*/
-        if (((CPL == 3) && !(temp & 4) && !cpl_override) || (rw && !cpl_override && !(temp & 2) && (((CPL == 3) && !cpl_override) || ((is486 || isibm486) && (cr0 & WP_FLAG))))) {
+        uint64_t ret = temp & ~0x3fffff;
+        if (((CPL == 3) && !(temp & 4) && !cpl_override) || ((rw == 1) && !cpl_override && !(temp & 2) && (((CPL == 3) && !cpl_override) || ((is486 || isibm486) && (cr0 & WP_FLAG))))) {
             cr2 = addr;
             temp &= 1;
             if (CPL == 3)
                 temp |= 4;
-            if (rw)
+            if (rw == 1)
                 temp |= 2;
             cpu_state.abrt = ABRT_PF;
             abrt_error     = temp;
@@ -349,7 +356,7 @@ mmutranslatereal_normal(uint32_t addr, int rw)
         }
 
         mmu_perm = temp & 4;
-        rammap(addr2) |= (rw ? 0x60 : 0x20);
+        rammap(addr2) |= ((rw == 1) ? 0x60 : 0x20);
 
         uint64_t page = temp & ~0x3fffff;
         if (cpu_features & CPU_FEATURE_PSE36)
@@ -359,12 +366,12 @@ mmutranslatereal_normal(uint32_t addr, int rw)
 
     temp  = rammap((temp & ~0xfff) + ((addr >> 10) & 0xffc));
     temp3 = temp & temp2;
-    if (!(temp & 1) || ((CPL == 3) && !(temp3 & 4) && !cpl_override) || (rw && !cpl_override && !(temp3 & 2) && (((CPL == 3) && !cpl_override) || ((is486 || isibm486) && (cr0 & WP_FLAG))))) {
+    if (!(temp & 1) || ((CPL == 3) && !(temp3 & 4) && !cpl_override) || ((rw == 1) && !cpl_override && !(temp3 & 2) && (((CPL == 3) && !cpl_override) || ((is486 || isibm486) && (cr0 & WP_FLAG))))) {
         cr2 = addr;
         temp &= 1;
         if (CPL == 3)
             temp |= 4;
-        if (rw)
+        if (rw == 1)
             temp |= 2;
         cpu_state.abrt = ABRT_PF;
         abrt_error     = temp;
@@ -373,7 +380,7 @@ mmutranslatereal_normal(uint32_t addr, int rw)
 
     mmu_perm = temp & 4;
     rammap(addr2) |= 0x20;
-    rammap((temp2 & ~0xfff) + ((addr >> 10) & 0xffc)) |= (rw ? 0x60 : 0x20);
+    rammap((temp2 & ~0xfff) + ((addr >> 10) & 0xffc)) |= ((rw == 1) ? 0x60 : 0x20);
 
     return (uint64_t) ((temp & ~0xfff) + (addr & 0xfff));
 }
@@ -388,6 +395,7 @@ mmutranslatereal_pae(uint32_t addr, int rw)
     uint64_t addr2;
     uint64_t addr3;
     uint64_t addr4;
+    uint64_t nxbit;
 
     if (cpu_state.abrt)
         return 0xffffffffffffffffULL;
@@ -399,7 +407,7 @@ mmutranslatereal_pae(uint32_t addr, int rw)
         temp &= 1;
         if (CPL == 3)
             temp |= 4;
-        if (rw)
+        if (rw == 1)
             temp |= 2;
         cpu_state.abrt = ABRT_PF;
         abrt_error     = temp;
@@ -408,14 +416,26 @@ mmutranslatereal_pae(uint32_t addr, int rw)
 
     addr3 = (temp & ~0xfffULL) + ((addr >> 18) & 0xff8);
     temp = temp4 = rammap64(addr3) & 0x000000ffffffffffULL;
+    nxbit = rammap64(addr3) & 0x8000000000000000ULL;
     temp3        = temp & temp2;
     if (!(temp & 1)) {
         cr2 = addr;
         temp &= 1;
         if (CPL == 3)
             temp |= 4;
-        if (rw)
+        if (rw == 1)
             temp |= 2;
+        cpu_state.abrt = ABRT_PF;
+        abrt_error     = temp;
+        return 0xffffffffffffffffULL;
+    }
+
+    if(nxbit && (rw == 2) && (msr.amd_efer & EFER_NXE) && (cpu_features & CPU_FEATURE_NX)) {
+        cr2 = addr;
+        temp &= 1;
+        temp |= 0x10;
+        if (CPL == 3)
+            temp |= 4;
         cpu_state.abrt = ABRT_PF;
         abrt_error     = temp;
         return 0xffffffffffffffffULL;
@@ -423,12 +443,12 @@ mmutranslatereal_pae(uint32_t addr, int rw)
 
     if (temp & 0x80) {
         /*2MB page*/
-        if (((CPL == 3) && !(temp & 4) && !cpl_override) || (rw && !cpl_override && !(temp & 2) && (((CPL == 3) && !cpl_override) || (cr0 & WP_FLAG)))) {
+        if (((CPL == 3) && !(temp & 4) && !cpl_override) || ((rw == 1) && !cpl_override && !(temp & 2) && (((CPL == 3) && !cpl_override) || (cr0 & WP_FLAG)))) {
             cr2 = addr;
             temp &= 1;
             if (CPL == 3)
                 temp |= 4;
-            if (rw)
+            if (rw == 1)
                 temp |= 2;
             cpu_state.abrt = ABRT_PF;
             abrt_error     = temp;
@@ -436,21 +456,33 @@ mmutranslatereal_pae(uint32_t addr, int rw)
             return 0xffffffffffffffffULL;
         }
         mmu_perm = temp & 4;
-        rammap64(addr3) |= (rw ? 0x60 : 0x20);
+        rammap64(addr3) |= ((rw == 1) ? 0x60 : 0x20);
 
         return ((temp & ~0x1fffffULL) + (addr & 0x1fffffULL)) & 0x000000ffffffffffULL;
     }
 
-    addr4 = (temp & ~0xfffULL) + ((addr >> 9) & 0xff8);
+    addr4 = (temp & ~0x8000000000000fffULL) + ((addr >> 9) & 0xff8);
     temp  = rammap64(addr4) & 0x000000ffffffffffULL;
+    nxbit = rammap64(addr4) & 0x8000000000000000ULL;
     temp3 = temp & temp4;
-    if (!(temp & 1) || ((CPL == 3) && !(temp3 & 4) && !cpl_override) || (rw && !cpl_override && !(temp3 & 2) && (((CPL == 3) && !cpl_override) || (cr0 & WP_FLAG)))) {
+    if (!(temp & 1) || ((CPL == 3) && !(temp3 & 4) && !cpl_override) || ((rw == 1) && !cpl_override && !(temp3 & 2) && (((CPL == 3) && !cpl_override) || (cr0 & WP_FLAG)))) {
         cr2 = addr;
         temp &= 1;
         if (CPL == 3)
             temp |= 4;
-        if (rw)
+        if (rw == 1)
             temp |= 2;
+        cpu_state.abrt = ABRT_PF;
+        abrt_error     = temp;
+        return 0xffffffffffffffffULL;
+    }
+
+    if(nxbit && (rw == 2) && (msr.amd_efer & EFER_NXE) && (cpu_features & CPU_FEATURE_NX)) {
+        cr2 = addr;
+        temp &= 1;
+        temp |= 0x10;
+        if (CPL == 3)
+            temp |= 4;
         cpu_state.abrt = ABRT_PF;
         abrt_error     = temp;
         return 0xffffffffffffffffULL;
@@ -458,9 +490,9 @@ mmutranslatereal_pae(uint32_t addr, int rw)
 
     mmu_perm = temp & 4;
     rammap64(addr3) |= 0x20;
-    rammap64(addr4) |= (rw ? 0x60 : 0x20);
+    rammap64(addr4) |= ((rw == 1) ? 0x60 : 0x20);
 
-    return ((temp & ~0xfffULL) + ((uint64_t) (addr & 0xfff))) & 0x000000ffffffffffULL;
+    return ((temp & ~0x8000000000000fffULL) + ((uint64_t) (addr & 0xfff))) & 0x000000ffffffffffULL;
 }
 
 uint64_t
@@ -506,7 +538,8 @@ mmutranslate_noabrt_normal(uint32_t addr, int rw)
 
     if ((temp & 0x80) && (cr4 & CR4_PSE)) {
         /*4MB page*/
-        if (((CPL == 3) && !(temp & 4) && !cpl_override) || (rw && !cpl_override && !(temp & 2) && ((CPL == 3) || (cr0 & WP_FLAG))))
+        uint64_t ret = temp & ~0x3fffff;
+        if (((CPL == 3) && !(temp & 4) && !cpl_override) || ((rw == 1) && !cpl_override && !(temp & 2) && ((CPL == 3) || (cr0 & WP_FLAG))))
             return 0xffffffffffffffffULL;
 
         uint64_t page = temp & ~0x3fffff;
@@ -518,7 +551,7 @@ mmutranslate_noabrt_normal(uint32_t addr, int rw)
     temp  = rammap((temp & ~0xfff) + ((addr >> 10) & 0xffc));
     temp3 = temp & temp2;
 
-    if (!(temp & 1) || ((CPL == 3) && !(temp3 & 4) && !cpl_override) || (rw && !cpl_override && !(temp3 & 2) && ((CPL == 3) || (cr0 & WP_FLAG))))
+    if (!(temp & 1) || ((CPL == 3) && !(temp3 & 4) && !cpl_override) || ((rw == 1) && !cpl_override && !(temp3 & 2) && ((CPL == 3) || (cr0 & WP_FLAG))))
         return 0xffffffffffffffffULL;
 
     return (uint64_t) ((temp & ~0xfff) + (addr & 0xfff));
@@ -534,6 +567,7 @@ mmutranslate_noabrt_pae(uint32_t addr, int rw)
     uint64_t addr2;
     uint64_t addr3;
     uint64_t addr4;
+    uint64_t nxbit;
 
     if (cpu_state.abrt)
         return 0xffffffffffffffffULL;
@@ -693,6 +727,46 @@ addwritelookup(uint32_t virt, uint32_t phys)
 }
 
 uint8_t *
+getpccache_execute(uint32_t a)
+{
+    uint64_t a64 = (uint64_t) a;
+#if (defined __amd64__ || defined _M_X64 || defined __aarch64__ || defined _M_ARM64)
+    uint8_t *p;
+#endif
+    uint32_t a2;
+
+    a2 = a;
+
+    if (cr0 >> 31) {
+        a64 = mmutranslate_execute(a64);
+
+        if (a64 == 0xffffffffffffffffULL)
+            return ram;
+    }
+    a64 &= rammask;
+
+    if (_mem_exec[a64 >> MEM_GRANULARITY_BITS]) {
+        if (is286) {
+            if (read_mapping[a64 >> MEM_GRANULARITY_BITS] && (read_mapping[a64 >> MEM_GRANULARITY_BITS]->flags & MEM_MAPPING_ROM_WS))
+                cpu_prefetch_cycles = cpu_rom_prefetch_cycles;
+            else
+                cpu_prefetch_cycles = cpu_mem_prefetch_cycles;
+        }
+
+#if (defined __amd64__ || defined _M_X64 || defined __aarch64__ || defined _M_ARM64)
+        p = &_mem_exec[a64 >> MEM_GRANULARITY_BITS][(uintptr_t) (a64 & MEM_GRANULARITY_PAGE) - (uintptr_t) (a2 & ~0xfff)];
+        return (uint8_t *) (((uintptr_t) p & 0x00000000ffffffffULL) | ((uintptr_t) &_mem_exec[a64 >> MEM_GRANULARITY_BITS][0] & 0xffffffff00000000ULL));
+#else
+        return &_mem_exec[a64 >> MEM_GRANULARITY_BITS][(uintptr_t) (a64 & MEM_GRANULARITY_PAGE) - (uintptr_t) (a2 & ~0xfff)];
+#endif
+    }
+
+    mem_log("Bad getpccache %08X%08X\n", (uint32_t) (a64 >> 32), (uint32_t) (a64 & 0xffffffffULL));
+
+    return (uint8_t *) &ff_pccache;
+}
+
+uint8_t *
 getpccache(uint32_t a)
 {
     uint64_t a64 = (uint64_t) a;
@@ -825,6 +899,8 @@ readmembl(uint32_t addr)
 {
     mem_mapping_t *map;
     uint64_t       a;
+    uint32_t       page;
+    uint8_t       *mtrr;
 
     GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_READ, 1);
 #ifdef USE_DEBUG_REGS_486
@@ -840,10 +916,15 @@ readmembl(uint32_t addr)
         a      = mmutranslate_read(addr);
         addr64 = (uint32_t) a;
 
-        if (a > 0xffffffffULL)
+        if (a > 0xfffffffffULL)
             return 0xff;
     }
     addr = (uint32_t) (addr64 & rammask);
+
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr)
+        return mtrr[addr & MEM_GRANULARITY_MASK];
 
     map = read_mapping[addr >> MEM_GRANULARITY_BITS];
     if (map && map->read_b)
@@ -855,6 +936,8 @@ readmembl(uint32_t addr)
 void
 writemembl(uint32_t addr, uint8_t val)
 {
+    uint32_t       page;
+    uint8_t       *mtrr;
     mem_mapping_t *map;
     uint64_t       a;
 
@@ -877,10 +960,17 @@ writemembl(uint32_t addr, uint8_t val)
         a      = mmutranslate_write(addr);
         addr64 = (uint32_t) a;
 
-        if (a > 0xffffffffULL)
+        if (a > 0xfffffffffULL)
             return;
     }
     addr = (uint32_t) (addr64 & rammask);
+
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr) {
+        mtrr[addr & MEM_GRANULARITY_MASK] = val;
+        return;
+    }
 
     map = write_mapping[addr >> MEM_GRANULARITY_BITS];
     if (map && map->write_b)
@@ -892,6 +982,8 @@ uint8_t
 readmembl_no_mmut(uint32_t addr, uint32_t a64)
 {
     mem_mapping_t *map;
+    uint32_t       page;
+    uint8_t       *mtrr;
 
     GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_READ, 1);
 
@@ -905,6 +997,11 @@ readmembl_no_mmut(uint32_t addr, uint32_t a64)
     } else
         addr &= rammask;
 
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr)
+        return mtrr[addr & MEM_GRANULARITY_MASK];
+
     map = read_mapping[addr >> MEM_GRANULARITY_BITS];
     if (map && map->read_b)
         return map->read_b(addr, map->priv);
@@ -917,6 +1014,8 @@ void
 writemembl_no_mmut(uint32_t addr, uint32_t a64, uint8_t val)
 {
     mem_mapping_t *map;
+    uint32_t       page;
+    uint8_t       *mtrr;
 
     GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_WRITE, 1);
 
@@ -935,6 +1034,13 @@ writemembl_no_mmut(uint32_t addr, uint32_t a64, uint8_t val)
     } else
         addr &= rammask;
 
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr) {
+        mtrr[addr & MEM_GRANULARITY_MASK] = val;
+        return;
+    }
+
     map = write_mapping[addr >> MEM_GRANULARITY_BITS];
     if (map && map->write_b)
         map->write_b(addr, val, map->priv);
@@ -944,6 +1050,8 @@ uint16_t
 readmemwl(uint32_t addr)
 {
     mem_mapping_t *map;
+    uint32_t       page;
+    uint8_t       *mtrr;
     uint64_t       a;
 
     addr64a[0] = addr;
@@ -967,7 +1075,7 @@ readmemwl(uint32_t addr)
                     a          = mmutranslate_read(addr + i);
                     addr64a[i] = (uint32_t) a;
 
-                    if (a > 0xffffffffULL)
+                    if (a > 0xfffffffffULL)
                         return 0xffff;
                 }
             }
@@ -983,12 +1091,17 @@ readmemwl(uint32_t addr)
         a          = mmutranslate_read(addr);
         addr64a[0] = (uint32_t) a;
 
-        if (a > 0xffffffffULL)
+        if (a > 0xfffffffffULL)
             return 0xffff;
     } else
         addr64a[0] = (uint64_t) addr;
 
     addr = addr64a[0] & rammask;
+
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr)
+        return mtrr[addr & MEM_GRANULARITY_MASK] | ((uint16_t) (mtrr[(addr + 1) & MEM_GRANULARITY_MASK]) << 8);
 
     map = read_mapping[addr >> MEM_GRANULARITY_BITS];
 
@@ -1005,6 +1118,8 @@ readmemwl(uint32_t addr)
 void
 writememwl(uint32_t addr, uint16_t val)
 {
+    uint32_t       page;
+    uint8_t       *mtrr;
     mem_mapping_t *map;
     uint64_t       a;
 
@@ -1032,7 +1147,7 @@ writememwl(uint32_t addr, uint16_t val)
                         a          = mmutranslate_write(addr + i);
                         addr64a[i] = (uint32_t) a;
 
-                        if (a > 0xffffffffULL)
+                        if (a > 0xfffffffffULL)
                             return;
                     }
                 }
@@ -1060,11 +1175,19 @@ writememwl(uint32_t addr, uint16_t val)
         a          = mmutranslate_write(addr);
         addr64a[0] = (uint32_t) a;
 
-        if (a > 0xffffffffULL)
+        if (a > 0xfffffffffULL)
             return;
     }
 
     addr = addr64a[0] & rammask;
+
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr) {
+        mtrr[addr & MEM_GRANULARITY_MASK]       = val;
+        mtrr[(addr + 1) & MEM_GRANULARITY_MASK] = val >> 8;
+        return;
+    }
 
     map = write_mapping[addr >> MEM_GRANULARITY_BITS];
 
@@ -1084,6 +1207,8 @@ writememwl(uint32_t addr, uint16_t val)
 uint16_t
 readmemwl_no_mmut(uint32_t addr, uint32_t *a64)
 {
+    uint32_t       page;
+    uint8_t       *mtrr;
     mem_mapping_t *map;
 
     GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_READ, 2);
@@ -1114,6 +1239,11 @@ readmemwl_no_mmut(uint32_t addr, uint32_t *a64)
     } else
         addr &= rammask;
 
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr)
+        return mtrr[addr & MEM_GRANULARITY_MASK] | ((uint16_t) (mtrr[(addr + 1) & MEM_GRANULARITY_MASK]) << 8);
+
     map = read_mapping[addr >> MEM_GRANULARITY_BITS];
 
     if (map && map->read_w)
@@ -1130,6 +1260,8 @@ readmemwl_no_mmut(uint32_t addr, uint32_t *a64)
 void
 writememwl_no_mmut(uint32_t addr, uint32_t *a64, uint16_t val)
 {
+    uint32_t       page;
+    uint8_t       *mtrr;
     mem_mapping_t *map;
 
     GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_WRITE, 2);
@@ -1169,6 +1301,14 @@ writememwl_no_mmut(uint32_t addr, uint32_t *a64, uint16_t val)
     } else
         addr &= rammask;
 
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr) {
+        mtrr[addr & MEM_GRANULARITY_MASK]       = val;
+        mtrr[(addr + 1) & MEM_GRANULARITY_MASK] = val >> 8;
+        return;
+    }
+
     map = write_mapping[addr >> MEM_GRANULARITY_BITS];
 
     if (map && map->write_w) {
@@ -1186,6 +1326,8 @@ writememwl_no_mmut(uint32_t addr, uint32_t *a64, uint16_t val)
 uint32_t
 readmemll(uint32_t addr)
 {
+    uint32_t       page;
+    uint8_t       *mtrr;
     mem_mapping_t *map;
     int            i;
     uint64_t       a = 0x0000000000000000ULL;
@@ -1223,7 +1365,7 @@ readmemll(uint32_t addr)
                         addr64a[i] = (uint32_t) a;
                     }
 
-                    if (a > 0xffffffffULL)
+                    if (a > 0xfffffffffULL)
                         return 0xffff;
                 }
             }
@@ -1241,11 +1383,16 @@ readmemll(uint32_t addr)
         a          = mmutranslate_read(addr);
         addr64a[0] = (uint32_t) a;
 
-        if (a > 0xffffffffULL)
+        if (a > 0xfffffffffULL)
             return 0xffffffff;
     }
 
     addr = addr64a[0] & rammask;
+
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr)
+        return mtrr[addr & MEM_GRANULARITY_MASK] | ((uint32_t) (mtrr[(addr + 1) & MEM_GRANULARITY_MASK]) << 8) | ((uint32_t) (mtrr[(addr + 2) & MEM_GRANULARITY_MASK]) << 16) | ((uint32_t) (mtrr[(addr + 3) & MEM_GRANULARITY_MASK]) << 24);
 
     map = read_mapping[addr >> MEM_GRANULARITY_BITS];
 
@@ -1264,6 +1411,8 @@ readmemll(uint32_t addr)
 void
 writememll(uint32_t addr, uint32_t val)
 {
+    uint32_t       page;
+    uint8_t       *mtrr;
     mem_mapping_t *map;
     int            i;
     uint64_t       a = 0x0000000000000000ULL;
@@ -1304,7 +1453,7 @@ writememll(uint32_t addr, uint32_t val)
                             addr64a[i] = (uint32_t) a;
                         }
 
-                        if (a > 0xffffffffULL)
+                        if (a > 0xfffffffffULL)
                             return;
                     }
                 }
@@ -1332,11 +1481,21 @@ writememll(uint32_t addr, uint32_t val)
         a          = mmutranslate_write(addr);
         addr64a[0] = (uint32_t) a;
 
-        if (a > 0xffffffffULL)
+        if (a > 0xfffffffffULL)
             return;
     }
 
     addr = addr64a[0] & rammask;
+
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr) {
+        mtrr[addr & MEM_GRANULARITY_MASK]       = val;
+        mtrr[(addr + 1) & MEM_GRANULARITY_MASK] = val >> 8;
+        mtrr[(addr + 2) & MEM_GRANULARITY_MASK] = val >> 16;
+        mtrr[(addr + 3) & MEM_GRANULARITY_MASK] = val >> 24;
+        return;
+    }
 
     map = write_mapping[addr >> MEM_GRANULARITY_BITS];
 
@@ -1363,6 +1522,8 @@ uint32_t
 readmemll_no_mmut(uint32_t addr, uint32_t *a64)
 {
     mem_mapping_t *map;
+    uint32_t       page;
+    uint8_t       *mtrr;
 
     GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_READ, 4);
 
@@ -1392,6 +1553,11 @@ readmemll_no_mmut(uint32_t addr, uint32_t *a64)
     } else
         addr &= rammask;
 
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr)
+        return mtrr[addr & MEM_GRANULARITY_MASK] | ((uint32_t) (mtrr[(addr + 1) & MEM_GRANULARITY_MASK]) << 8) | ((uint32_t) (mtrr[(addr + 2) & MEM_GRANULARITY_MASK]) << 16) | ((uint32_t) (mtrr[(addr + 3) & MEM_GRANULARITY_MASK]) << 24);
+
     map = read_mapping[addr >> MEM_GRANULARITY_BITS];
 
     if (map && map->read_l)
@@ -1411,6 +1577,8 @@ void
 writememll_no_mmut(uint32_t addr, uint32_t *a64, uint32_t val)
 {
     mem_mapping_t *map;
+    uint32_t       page;
+    uint8_t       *mtrr;
 
     GDBSTUB_MEM_ACCESS(addr, GDBSTUB_MEM_WRITE, 4);
 
@@ -1449,6 +1617,16 @@ writememll_no_mmut(uint32_t addr, uint32_t *a64, uint32_t val)
     } else
         addr &= rammask;
 
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr) {
+        mtrr[addr & MEM_GRANULARITY_MASK]       = val;
+        mtrr[(addr + 1) & MEM_GRANULARITY_MASK] = val >> 8;
+        mtrr[(addr + 2) & MEM_GRANULARITY_MASK] = val >> 16;
+        mtrr[(addr + 3) & MEM_GRANULARITY_MASK] = val >> 24;
+        return;
+    }
+
     map = write_mapping[addr >> MEM_GRANULARITY_BITS];
 
     if (map && map->write_l) {
@@ -1474,6 +1652,8 @@ readmemql(uint32_t addr)
 {
     mem_mapping_t *map;
     int            i;
+    uint32_t       page;
+    uint8_t       *mtrr;
     uint64_t       a = 0x0000000000000000ULL;
 
     for (i = 0; i < 8; i++) {
@@ -1508,7 +1688,7 @@ readmemql(uint32_t addr)
                         addr64a[i] = (uint32_t) a;
                     }
 
-                    if (a > 0xffffffffULL)
+                    if (a > 0xfffffffffULL)
                         return 0xffff;
                 }
             }
@@ -1526,11 +1706,16 @@ readmemql(uint32_t addr)
         a          = mmutranslate_read(addr);
         addr64a[0] = (uint32_t) a;
 
-        if (a > 0xffffffffULL)
+        if (a > 0xfffffffffULL)
             return 0xffffffffffffffffULL;
     }
 
     addr = addr64a[0] & rammask;
+
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr)
+        return readmemll(addr) | ((uint64_t) readmemll(addr + 4) << 32);
 
     map = read_mapping[addr >> MEM_GRANULARITY_BITS];
 
@@ -1562,6 +1747,8 @@ writememql(uint32_t addr, uint64_t val)
 {
     mem_mapping_t *map;
     int            i;
+    uint32_t       page;
+    uint8_t       *mtrr;
     uint64_t       a = 0x0000000000000000ULL;
 
     for (i = 0; i < 8; i++) {
@@ -1599,7 +1786,7 @@ writememql(uint32_t addr, uint64_t val)
                             addr64a[i] = (uint32_t) a;
                         }
 
-                        if (addr64a[i] > 0xffffffffULL)
+                        if (addr64a[i] > 0xfffffffffULL)
                             return;
                     }
                 }
@@ -1626,11 +1813,25 @@ writememql(uint32_t addr, uint64_t val)
 
     if (cr0 >> 31) {
         addr64a[0] = mmutranslate_write(addr);
-        if (addr64a[0] > 0xffffffffULL)
+        if (addr64a[0] > 0xfffffffffULL)
             return;
     }
 
     addr = addr64a[0] & rammask;
+
+    page = (addr >> MEM_GRANULARITY_BITS);
+    mtrr = mtrr_areas[page];
+    if (mtrr) {
+        mtrr[addr & MEM_GRANULARITY_MASK]       = val;
+        mtrr[(addr + 1) & MEM_GRANULARITY_MASK] = val >> 8;
+        mtrr[(addr + 2) & MEM_GRANULARITY_MASK] = val >> 16;
+        mtrr[(addr + 3) & MEM_GRANULARITY_MASK] = val >> 24;
+        mtrr[(addr + 4) & MEM_GRANULARITY_MASK] = val >> 32;
+        mtrr[(addr + 5) & MEM_GRANULARITY_MASK] = val >> 40;
+        mtrr[(addr + 6) & MEM_GRANULARITY_MASK] = val >> 48;
+        mtrr[(addr + 7) & MEM_GRANULARITY_MASK] = val >> 56;
+        return;
+    }
 
     map = write_mapping[addr >> MEM_GRANULARITY_BITS];
 
@@ -2905,6 +3106,14 @@ mem_reset(void)
 
     memset(pages, 0x00, pages_sz * sizeof(page_t));
 
+    for (uint32_t c = 0; c < MEM_MAPPINGS_NO; c++) {
+        if (mtrr_areas[c]) {
+            free(mtrr_areas[c]);
+            mtrr_areas[c] = 0;
+        }
+        mtrr_area_refcounts[c] = 0;
+    }
+
 #ifdef USE_NEW_DYNAREC
     byte_dirty_mask = malloc((mem_size * 1024) / 8);
     memset(byte_dirty_mask, 0, (mem_size * 1024) / 8);
@@ -3021,6 +3230,8 @@ mem_init(void)
     readlookupp  = malloc((1 << 20) * sizeof(uint8_t));
     writelookup2 = malloc((1 << 20) * sizeof(uintptr_t));
     writelookupp = malloc((1 << 20) * sizeof(uint8_t));
+
+    memset(mtrr_areas, 0x00, MEM_MAPPINGS_NO * sizeof(uint8_t *));
 }
 
 static void
@@ -3260,4 +3471,120 @@ mem_a20_recalc(void)
     }
 
     mem_a20_state = state;
+}
+
+void
+mem_add_mtrr(uint64_t base, uint64_t mask, uint8_t type)
+{
+    uint64_t size = ((~mask) & 0xffffffff) + 1;
+    uint64_t page_base;
+    uint64_t page;
+    uint64_t addr;
+    uint8_t *mtrr;
+
+    mem_log("Adding MTRR base=%08llx mask=%08llx size=%08llx type=%d\n", base, mask, size, type);
+
+    if (size > 0x8000) {
+        mem_log("Ignoring MTRR, size too big\n");
+        return;
+    }
+
+    if (mem_addr_is_ram(base)) {
+        mem_log("Ignoring MTRR, base is in RAM\n");
+        return;
+    }
+
+    for (page_base = base; page_base < base + size; page_base += MEM_GRANULARITY_SIZE) {
+        page = (page_base >> MEM_GRANULARITY_BITS);
+        if (mtrr_areas[page]) {
+            /* area already allocated, increase refcount and don't allocate it again */
+            mtrr_area_refcounts[page]++;
+            continue;
+        }
+
+        /* allocate area */
+        mtrr = malloc(MEM_GRANULARITY_SIZE);
+        if (!mtrr)
+            fatal("Failed to allocate page for MTRR page %08llx (errno=%d)\n", page_base, errno);
+
+        /* populate area with data from RAM */
+        for (addr = 0; addr < MEM_GRANULARITY_SIZE; addr++) {
+            mtrr[addr] = readmembl(page_base | addr);
+        }
+
+        /* enable area */
+        mtrr_areas[page] = mtrr;
+    }
+}
+
+void
+mem_del_mtrr(uint64_t base, uint64_t mask)
+{
+    uint64_t size = ((~mask) & 0xffffffff) + 1;
+    uint64_t page_base;
+    uint64_t page;
+
+    mem_log("Deleting MTRR base=%08llx mask=%08llx size=%08llx\n", base, mask, size);
+
+    if (size > 0x8000) {
+        mem_log("Ignoring MTRR, size too big\n");
+        return;
+    }
+
+    if (mem_addr_is_ram(base)) {
+        mem_log("Ignoring MTRR, base is in RAM\n");
+        return;
+    }
+
+    for (page_base = base; page_base < base + size; page_base += MEM_GRANULARITY_SIZE) {
+        page = (page_base >> MEM_GRANULARITY_BITS);
+        if (mtrr_areas[page]) {
+            /* decrease reference count */
+            if (mtrr_area_refcounts[page] > 0)
+                mtrr_area_refcounts[page]--;
+
+            /* if no references are left, de-allocate area */
+            if (mtrr_area_refcounts[page] == 0) {
+                free(mtrr_areas[page]);
+                mtrr_areas[page] = 0;
+            }
+        }
+    }
+}
+
+void
+mem_invalidate_mtrr(uint8_t wb)
+{
+    uint64_t page;
+    uint64_t page_base;
+    uint64_t addr;
+    uint8_t *mtrr;
+
+    mem_log("Invalidating cache (writeback=%d)\n", wb);
+    for (page = 0; page < MEM_MAPPINGS_NO; page++) {
+        mtrr = mtrr_areas[page];
+        if (mtrr) {
+            page_base = (page << MEM_GRANULARITY_BITS);
+            if (!mem_addr_is_ram(page_base))
+                continue; /* don't invalidate pages not backed by RAM (hack?) */
+
+            /* temporarily set area aside */
+            mtrr_areas[page] = 0;
+
+            /* write data back to memory if requested */
+            if (wb && write_mapping[page]) { /* don't write back to a page which can't be written to */
+                for (addr = 0; addr < MEM_GRANULARITY_SIZE; addr++) {
+                    writemembl(page_base | addr, mtrr[addr]);
+                }
+            }
+
+            /* re-populate area with data from memory */
+            for (addr = 0; addr < MEM_GRANULARITY_SIZE; addr++) {
+                mtrr[addr] = readmembl(page_base | addr);
+            }
+
+            /* re-enable area */
+            mtrr_areas[page] = mtrr;
+        }
+    }
 }

@@ -1775,7 +1775,6 @@ stos(int bits)
 static void
 aa(void)
 {
-    set_pzs(8);
     AL = cpu_data & 0x0f;
     wait(6, 0);
 }
@@ -2643,20 +2642,25 @@ execx86(int cycs)
                     break;
 
                 case 0x27: /*DAA*/
+                {
                     cpu_dest = AL;
                     set_of(0);
                     old_af = !!(cpu_state.flags & A_FLAG);
+                    int old_cf = !!(cpu_state.flags & C_FLAG);
+                    //undefined carry flag behavior tested on real 8088 by dbalsom on GitHub.
+                    if(old_cf) {
+                        if(AL >= 0x1a && AL <= 0x7f) set_of(1);
+                    }
+                    else if(AL >= 0x7a && AL <= 0x7f) set_of(1);
                     if ((cpu_state.flags & A_FLAG) || (AL & 0x0f) > 9) {
                         cpu_src  = 6;
                         cpu_data = cpu_dest + cpu_src;
-                        set_of_add(8);
                         cpu_dest = cpu_data;
                         set_af(1);
                     }
-                    if ((cpu_state.flags & C_FLAG) || AL > (old_af ? 0x9f : 0x99)) {
+                    if (old_cf || AL > (old_af ? 0x9f : 0x99)) {
                         cpu_src  = 0x60;
                         cpu_data = cpu_dest + cpu_src;
-                        set_of_add(8);
                         cpu_dest = cpu_data;
                         set_cf(1);
                     }
@@ -2664,45 +2668,85 @@ execx86(int cycs)
                     set_pzs(8);
                     wait(3, 0);
                     break;
+                }
                 case 0x2F: /*DAS*/
                     cpu_dest = AL;
                     set_of(0);
                     old_af = !!(cpu_state.flags & A_FLAG);
+                    //undefined overflow flag behavior tested on real 8088 by dbalsom on GitHub.
+                    if(!old_af)
+                    {
+                        if(!(cpu_state.flags & C_FLAG))
+                        {
+                            if(AL >= 0x9a && AL <= 0xdf) set_of(1);
+                        }
+                        else
+                        {
+                            if(AL >= 0x80 && AL <= 0xdf) set_of(1);
+                        }
+                    }
+                    else
+                    {
+                        if(!(cpu_state.flags & C_FLAG))
+                        {
+                            if((AL >= 0x80 && AL <= 0x85) || (AL >= 0xa0 && AL <= 0xe5)) set_of(1);
+                        }
+                        else
+                        {
+                            if(AL >= 0x80 && AL <= 0xe5) set_of(1);
+                        }
+                    }
                     if ((cpu_state.flags & A_FLAG) || ((AL & 0xf) > 9)) {
                         cpu_src  = 6;
                         cpu_data = cpu_dest - cpu_src;
-                        set_of_sub(8);
                         cpu_dest = cpu_data;
                         set_af(1);
                     }
                     if ((cpu_state.flags & C_FLAG) || AL > (old_af ? 0x9f : 0x99)) {
                         cpu_src  = 0x60;
                         cpu_data = cpu_dest - cpu_src;
-                        set_of_sub(8);
                         cpu_dest = cpu_data;
                         set_cf(1);
                     }
+                    else set_cf(0);
                     AL = cpu_dest;
                     set_pzs(8);
                     wait(3, 0);
                     break;
                 case 0x37: /*AAA*/
+                {
                     wait(1, 0);
+                    uint8_t old_al = AL;
+                    uint8_t new_al;
                     if ((cpu_state.flags & A_FLAG) || ((AL & 0xf) > 9)) {
                         cpu_src = 6;
+                        new_al = AL + 6;
                         ++AH;
                         set_ca();
                     } else {
                         cpu_src = 0;
+                        new_al = AL;
                         clear_ca();
                         wait(1, 0);
                     }
                     cpu_dest = AL;
                     cpu_data = cpu_dest + cpu_src;
-                    set_of_add(8);
+                    //undefined flag behavior, tested on real 8088 by dbalsom on GitHub.
+                    set_pzs(8);
+                    set_of(0);
+                    set_zf(0);
+                    cpu_state.flags &= ~0x80;
+                    if(new_al == 0) set_zf(1);
+                    if(old_al >= 0x7a && old_al <= 0x7f) set_of(1);
+                    if(old_al <= 0x7a && old_al <= 0xf9) cpu_state.flags |= 0x80;
                     aa();
                     break;
+                }
                 case 0x3F: /*AAS*/
+                {
+                    int old_af = !!(cpu_state.flags & A_FLAG);
+                    uint8_t old_al = AL;
+                    uint8_t new_al;
                     wait(1, 0);
                     if ((cpu_state.flags & A_FLAG) || ((AL & 0xf) > 9)) {
                         cpu_src = 6;
@@ -2714,10 +2758,17 @@ execx86(int cycs)
                         wait(1, 0);
                     }
                     cpu_dest = AL;
-                    cpu_data = cpu_dest - cpu_src;
-                    set_of_sub(8);
+                    AL = new_al = cpu_data = cpu_dest - cpu_src;
+                    //undefined flag behavior, tested on real 8088 by dbalsom on GitHub.
+                    set_pzs(8);
+                    set_of(0);
+                    cpu_state.flags &= ~0x80;
+                    if(old_af && old_al >= 0x80 && old_al <= 0x85) set_of(1);
+                    if(!old_af && old_al >= 0x80) cpu_state.flags |= 0x80;
+                    if(old_af && (old_al <= 0x05 || old_al >= 0x86)) cpu_state.flags |= 0x80;
                     aa();
                     break;
+                }
 
                 case 0x40:
                 case 0x41:

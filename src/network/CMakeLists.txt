@@ -38,7 +38,7 @@ list(APPEND net_sources
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SLIRP REQUIRED IMPORTED_TARGET slirp)
-target_link_libraries(86Box PkgConfig::SLIRP)
+target_link_libraries(PCBox PkgConfig::SLIRP)
 
 if(WIN32)
     target_link_libraries(PkgConfig::SLIRP INTERFACE wsock32 ws2_32 iphlpapi)
@@ -51,11 +51,11 @@ if(WIN32)
 endif()
 
 if (HAIKU)
-    target_link_libraries(86Box network)
+    target_link_libraries(PCBox network)
 endif()
 
 if(WIN32)
-    target_link_libraries(86Box ws2_32)
+    target_link_libraries(PCBox ws2_32)
 endif()
 
 if (UNIX)

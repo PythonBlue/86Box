@@ -385,7 +385,7 @@
 #define TEXCTL_CLAMPU                 (1 << 28)
 #define TEXCTL_TMODULATE              (1 << 29)
 #define TEXCTL_STRANS                 (1 << 30)
-#define TEXCTL_ITRANS                 (1 << 31)
+#define TEXCTL_ITRANS                 (1u << 31)
 
 #define TEXHEIGHT_TH_MASK             (0x3f << 0)
 #define TEXHEIGHT_THMASK_SHIFT        (18)

@@ -24,7 +24,7 @@ add_library(cdrom OBJECT
     cdrom_image.c
     cdrom_image_viso.c
 )
-target_link_libraries(86Box PkgConfig::SNDFILE)
+target_link_libraries(PCBox PkgConfig::SNDFILE)
 
 if(CDROM_MITSUMI)
     target_compile_definitions(cdrom PRIVATE USE_CDROM_MITSUMI)
@@ -33,5 +33,5 @@ endif()
 
 if (WIN32)
     # MSYS2
-    target_link_libraries(86Box -static ${SNDFILE_STATIC_LIBRARIES})
+    target_link_libraries(PCBox -static ${SNDFILE_STATIC_LIBRARIES})
 endif()

@@ -27,10 +27,13 @@ add_library(dev OBJECT
     hwm_gl518sm.c
     hwm_lm75.c
     hwm_lm78.c
+    hwm_nsc366.c
     hwm_vt82c686.c
     i2c.c
     i2c_gpio.c
     ibm_5161.c
+    intel_ich2_gpio.c
+    intel_ich2_trap.c
     isamem.c
     isartc.c
     isapnp.c
@@ -43,6 +46,7 @@ add_library(dev OBJECT
     mouse.c
     mouse_bus.c
     mouse_microtouch_touchscreen.c
+    tco.c
     mouse_ps2.c
     mouse_serial.c
     nec_mate_unk.c
@@ -59,7 +63,7 @@ add_library(dev OBJECT
 )
 
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT MSVC)
-    target_link_libraries(86Box atomic)
+    target_link_libraries(PCBox atomic)
 endif()
 
 if(ISAMEM_RAMPAGE)

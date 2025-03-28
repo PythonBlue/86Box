@@ -36,6 +36,8 @@
 #include <86box/fdc.h>
 #include <86box/keyboard.h>
 #include <86box/sound.h>
+#include <86box/sio.h>
+#include <86box/snd_ac97.h>
 #include <86box/video.h>
 #include <86box/plat_unused.h>
 #include <86box/thread.h>
@@ -94,6 +96,7 @@ const machine_filter_t machine_types[] = {
     { "[1998] Slot 1/Socket 370",         MACHINE_TYPE_SLOT1_370  },
     { "[1998] Slot 2",                    MACHINE_TYPE_SLOT2      },
     { "[1998] Socket 370",                MACHINE_TYPE_SOCKET370  },
+    { "[1999] Slot A",                    MACHINE_TYPE_SLOTA      },
     { "Miscellaneous",                    MACHINE_TYPE_MISC       }
 };
 
@@ -114,6 +117,7 @@ const machine_filter_t machine_chipsets[] = {
     { "ALi ALADDiN IV+",            MACHINE_CHIPSET_ALI_ALADDIN_IV_PLUS },
     { "ALi ALADDiN V",              MACHINE_CHIPSET_ALI_ALADDIN_V       },
     { "ALi ALADDiN-PRO II",         MACHINE_CHIPSET_ALI_ALADDIN_PRO_II  },
+    { "AMD 750",                    MACHINE_CHIPSET_AMD_750             },
     { "C&T 82C235 SCAT",            MACHINE_CHIPSET_SCAT                },
     { "C&T 82C236 SCATsx",          MACHINE_CHIPSET_SCAT_SX             },
     { "C&T CS8221 NEAT",            MACHINE_CHIPSET_NEAT                },
@@ -140,6 +144,7 @@ const machine_filter_t machine_chipsets[] = {
     { "Intel 440BX",                MACHINE_CHIPSET_INTEL_440BX         },
     { "Intel 440ZX",                MACHINE_CHIPSET_INTEL_440ZX         },
     { "Intel 440GX",                MACHINE_CHIPSET_INTEL_440GX         },
+    { "Intel i815EP",               MACHINE_CHIPSET_INTEL_I815EP        },
     { "OPTi 283",                   MACHINE_CHIPSET_OPTI_283            },
     { "OPTi 291",                   MACHINE_CHIPSET_OPTI_291            },
     { "OPTi 381",                   MACHINE_CHIPSET_OPTI_381            },
@@ -14805,6 +14810,45 @@ const machine_t machines[] = {
         .snd_device = NULL,
         .net_device = NULL
     },
+    {
+        .name = "[i440BX] ASUS P2B-LS (coreboot)",
+        .internal_name = "p2bls_coreboot",
+        .type = MACHINE_TYPE_SLOT1,
+        .chipset = MACHINE_CHIPSET_INTEL_440BX,
+        .init = machine_at_p2bls_coreboot_init,
+        .p1_handler = NULL,
+        .gpio_handler = NULL,
+        .available_flag = MACHINE_AVAILABLE,
+        .gpio_acpi_handler = NULL,
+        .cpu = {
+            .package = CPU_PKG_SLOT1,
+            .block = CPU_BLOCK_NONE,
+            .min_bus = 50000000,
+            .max_bus = 112121212,
+            .min_voltage = 1300,
+            .max_voltage = 3500,
+            .min_multi = 1.5,
+            .max_multi = 8.0
+        },
+        .bus_flags = MACHINE_PS2_AGP,
+        .flags = MACHINE_IDE_DUAL | MACHINE_COREBOOT,
+        .ram = {
+            .min = 8192,
+            .max = 1048576,
+            .step = 8192
+        },
+        .nvrmask = 255,
+        .kbc_device = &keyboard_ps2_ami_pci_device,
+        .kbc_p1 = 0xff,
+        .gpio = 0xffffffff,
+        .gpio_acpi = 0xffffffff,
+        .device = NULL,
+        .fdc_device = NULL,
+        .sio_device = NULL,
+        .vid_device = NULL,
+        .snd_device = NULL,
+        .net_device = NULL
+    },
     /* Has a Winbond W83977EF Super I/O chip with on-chip KBC with AMIKey-2 KBC
        firmware. */
     {
@@ -14836,6 +14880,45 @@ const machine_t machines[] = {
         },
         .nvrmask = 255,
         .kbc_device = NULL,
+        .kbc_p1 = 0xff,
+        .gpio = 0xffffffff,
+        .gpio_acpi = 0xffffffff,
+        .device = NULL,
+        .fdc_device = NULL,
+        .sio_device = NULL,
+        .vid_device = NULL,
+        .snd_device = NULL,
+        .net_device = NULL
+    },
+    {
+        .name = "[i440BX] ASUS P3B-F (coreboot)",
+        .internal_name = "p3bf_coreboot",
+        .type = MACHINE_TYPE_SLOT1,
+        .chipset = MACHINE_CHIPSET_INTEL_440BX,
+        .init = machine_at_p3bf_coreboot_init,
+        .p1_handler = NULL,
+        .gpio_handler = NULL,
+        .available_flag = MACHINE_AVAILABLE,
+        .gpio_acpi_handler = NULL,
+        .cpu = {
+            .package = CPU_PKG_SLOT1,
+            .block = CPU_BLOCK_NONE,
+            .min_bus = 66666667,
+            .max_bus = 150000000,
+            .min_voltage = 1300,
+            .max_voltage = 3500,
+            .min_multi = 1.5,
+            .max_multi = 8.0
+        },
+        .bus_flags = MACHINE_PS2_AGP,
+        .flags = MACHINE_IDE_DUAL | MACHINE_COREBOOT,
+        .ram = {
+            .min = 8192,
+            .max = 1048576,
+            .step = 8192
+        },
+        .nvrmask = 255,
+        .kbc_device = &keyboard_ps2_ami_pci_device,
         .kbc_p1 = 0xff,
         .gpio = 0xffffffff,
         .gpio_acpi = 0xffffffff,
@@ -15870,7 +15953,7 @@ const machine_t machines[] = {
             .min_voltage = 1300,
             .max_voltage = 3500,
             .min_multi = 1.5,
-            .max_multi = 8.0 /* limits assumed */
+            .max_multi = 15.0 /* limits assumed */
         },
         .bus_flags = MACHINE_PS2_PCI | MACHINE_BUS_USB, /* Machine has EISA, possibly for a riser? */
                                                         /* Yes, that's a rise slot, not EISA. */
@@ -15912,7 +15995,7 @@ const machine_t machines[] = {
             .min_voltage = 1300,
             .max_voltage = 3500,
             .min_multi = 1.5,
-            .max_multi = 8.0
+            .max_multi = 15.0
         },
         .bus_flags = MACHINE_PS2_AGP | MACHINE_BUS_USB,
         .flags = MACHINE_IDE_DUAL | MACHINE_APM | MACHINE_ACPI | MACHINE_USB, /* Machine has quad channel IDE with internal controller: CMD PCI-0648 */
@@ -15953,7 +16036,7 @@ const machine_t machines[] = {
             .min_voltage = 1300,
             .max_voltage = 3500,
             .min_multi = 1.5,
-            .max_multi = 8.0 /* limits assumed */
+            .max_multi = 15.0 /* limits assumed */
         },
         .bus_flags = MACHINE_PS2_AGP | MACHINE_BUS_USB,
         .flags = MACHINE_IDE_DUAL | MACHINE_APM | MACHINE_ACPI | MACHINE_USB,
@@ -16282,7 +16365,7 @@ const machine_t machines[] = {
         .gpio_acpi_handler = NULL,
         .cpu = {
             .package = CPU_PKG_SOCKET370,
-            .block = CPU_BLOCK(CPU_CYRIX3S),
+            .block = CPU_BLOCK(CPU_CYRIX3S, CPU_CYRIX3N),
             .min_bus = 60000000,
             .max_bus = 100000000,
             .min_voltage = 1800,
@@ -16325,7 +16408,7 @@ const machine_t machines[] = {
         .gpio_acpi_handler = NULL,
         .cpu = {
             .package = CPU_PKG_SLOT1,
-            .block = CPU_BLOCK(CPU_PENTIUMPRO, CPU_PENTIUM2, CPU_CYRIX3S),
+            .block = CPU_BLOCK(CPU_PENTIUMPRO, CPU_PENTIUM2, CPU_CYRIX3S, CPU_CYRIX3N),
             .min_bus = 0,
             .max_bus = 66666667,
             .min_voltage = 0,
@@ -16352,6 +16435,48 @@ const machine_t machines[] = {
         .snd_device = NULL,
         .net_device = NULL
     },
+
+#if defined(DEV_BRANCH) && defined(USE_ATHLON)
+    /* AMD 750 boards */
+    {
+        .name = "[AMD 750] ASUS K7M",
+        .internal_name = "k7m",
+        .type = MACHINE_TYPE_SLOTA,
+        .chipset = MACHINE_CHIPSET_AMD_750,
+        .init = machine_at_k7m_init,
+        .p1_handler = NULL,
+        .gpio_handler = NULL,
+        .available_flag = MACHINE_AVAILABLE,
+        .gpio_acpi_handler = NULL,
+        .cpu = {
+            .package = CPU_PKG_SLOTA,
+            .block = CPU_BLOCK_NONE,
+            .min_bus = 66666667,
+            .max_bus = 133333333,
+            .min_voltage = 1300,
+            .max_voltage = 3500,
+            .min_multi = 1.5,
+            .max_multi = 15.0
+        },
+        .bus_flags = MACHINE_PS2_NOISA,
+        .flags = MACHINE_IDE_DUAL,
+        .ram = {
+            .min = 32768,
+            .max = 786432,
+            .step = 32768
+        },
+        .nvrmask = 255,
+        .kbc_device = NULL,
+        .kbc_p1 = 0,
+        .gpio = 0,
+        .device = NULL,
+        .fdc_device = NULL,
+        .sio_device = NULL,
+        .vid_device = NULL,
+        .snd_device = &ad1881_device,
+        .net_device = NULL
+    },
+#endif
 
     {
         .name = NULL,

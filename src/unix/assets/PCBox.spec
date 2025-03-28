@@ -1,4 +1,4 @@
-# Fedora RPM spec file for 86Box including roms
+# Fedora RPM spec file for PCBox including roms
 #
 # To create RPM files from this spec file, run the following commands:
 #  sudo dnf install rpm-build
@@ -6,23 +6,28 @@
 #
 # copy this 86Box.spec file to ~/rpmbuild/SPECS and run the following commands:
 #  cd ~/rpmbuild
-#  sudo dnf builddep SPECS/86Box.spec
-#  rpmbuild --undefine=_disable_source_fetch -ba SPECS/86Box.spec
+#  sudo dnf builddep SPECS/PCBox.spec
+#  rpmbuild --undefine=_disable_source_fetch -ba SPECS/PCBox.spec
 #
 # After a successful build, you can install the RPMs as follows:
 #  sudo dnf install RPMS/$(uname -m)/86Box-3* RPMS/noarch/86Box-roms*
 
-%global romver 4.1
+%global romver 4.2.1
 
+<<<<<<< HEAD:src/unix/assets/PCBox.spec
+Name:		PCBox
+Version:	4.2.5
+=======
 Name:		86Box
 Version:	4.3
+>>>>>>> 6110a60f1406549dd60e82037f1b7ba3c5300f6e:src/unix/assets/86Box.spec
 Release:	1%{?dist}
 Summary:	Classic PC emulator
 License:	GPLv2+
-URL:		https://86box.net
+URL:		https://pcbox-emu.xyz/
 
-Source0:	https://github.com/86Box/86Box/archive/refs/tags/v%{version}.tar.gz
-Source1:	https://github.com/86Box/roms/archive/refs/tags/v%{romver}.zip
+Source0:	https://github.com/PCBox/PCBox/archive/refs/tags/v%{version}.tar.gz
+Source1:	https://github.com/PCBox/roms/archive/refs/tags/v%{romver}.zip
 
 BuildRequires: cmake
 BuildRequires: desktop-file-utils
@@ -49,10 +54,10 @@ BuildRequires: SDL2-devel
 
 Requires: hicolor-icon-theme
 Requires: fluid-soundfont-gm
-Requires: 86Box-roms
+Requires: PCBox-roms
 
 %description
-86Box is a hypervisor and IBM PC system emulator that specializes in
+PCBox is a hypervisor and IBM PC system emulator that specializes in
 running old operating systems and software designed for IBM
 PC systems and compatibles from 1981 through fairly recent
 system designs based on the PCI bus.
@@ -60,13 +65,13 @@ system designs based on the PCI bus.
 It supports various models of PCs, graphics and sound cards, and CPUs.
 
 %package	roms
-Summary:	ROMs for use with 86Box
+Summary:	ROMs for use with PCBox
 Version:	%{romver}
 License:	Proprietary
 BuildArch:	noarch
 
 %description	roms
-Collection of ROMs for use with 86Box.
+Collection of ROMs for use with PCBox.
 
 %prep
 %autosetup -p1 -a1
@@ -110,7 +115,7 @@ popd
 # files part of the main package
 %files
 %license COPYING
-%{_bindir}/86Box
+%{_bindir}/PCBox
 %{_datadir}/applications/net.86box.86Box.desktop
 %{_metainfodir}/net.86box.86Box.metainfo.xml
 %{_datadir}/icons/hicolor/*/apps/net.86box.86Box.png
@@ -121,5 +126,5 @@ popd
 %{_datadir}/%{name}/roms
 
 %changelog
-* Sat Aug 31 Jasmine Iwanek <jriwanek[AT]gmail.com> 4.3-1
-- Bump release
+* Sat Sep 28 2024 Britney Lozza <bnlozza@gmail.com> - 4.3-1
+- Fixing fuel's bad forking by porting the spec file from 86Box to PCBox
