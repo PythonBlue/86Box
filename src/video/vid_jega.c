@@ -250,9 +250,9 @@ jega_render_text(void *priv)
         int        sc_wide       = *sc - jega->start_scan_count;
         const bool cursoron      = (blinked || jega->cursorblink_disable) &&
                                    (*sc >= jega->regs[RCCSL]) && (*sc <= jega->regs[RCCEL]);
+        uint32_t   attr_basic    = 0;
         uint32_t   chr_first;
-        uint32_t   attr_basic;
-        int        fg;
+        int        fg            = 0;
         int        bg;
 
         for (int x = 0; x < (*hdisp + *scrollcache); x += charwidth) {
@@ -428,16 +428,18 @@ jega_out(uint16_t addr, uint8_t val, void *priv)
                 }
             } else {
                 jega->attrregs[jega->attraddr & 31] = val;
-                if (jega->attraddr < 0x10) {
+                int is_attr14 = jega->is_vga ? (jega->attraddr == 0x14) : 0;
+                if (is_attr14 || (jega->attraddr < 0x10)) {
                     for (uint8_t c = 0; c < 16; c++) {
-                        if (!jega->is_vga)
+                        if (jega->is_vga) {
+                            if (jega->attrregs[0x10] & 0x80)
+                                jega->egapal[c] = (jega->attrregs[c] & 0xf) | ((jega->attrregs[0x14] & 0xf) << 4);
+                            else if (jega->vga.svga.ati_4color)
+                                jega->egapal[c] = pal4to16[(c & 0x03) | ((val >> 2) & 0xc)];
+                            else
+                                jega->egapal[c] = (jega->attrregs[c] & 0x3f) | ((jega->attrregs[0x14] & 0xc) << 4);
+                        } else
                             jega->egapal[c] = jega->attrregs[c] & 0x3f;
-                        else if (jega->attrregs[0x10] & 0x80)
-                            jega->egapal[c] = (jega->attrregs[c] & 0xf) | ((jega->attrregs[0x14] & 0xf) << 4);
-                        else if (jega->vga.svga.ati_4color)
-                            jega->egapal[c] = pal4to16[(c & 0x03) | ((val >> 2) & 0xc)];
-                        else
-                            jega->egapal[c] = (jega->attrregs[c] & 0x3f) | ((jega->attrregs[0x14] & 0xc) << 4);
                     }
                     if (jega->is_vga)
                         jega->vga.svga.fullchange = changeframecount;
@@ -463,21 +465,40 @@ jega_out(uint16_t addr, uint8_t val, void *priv)
         case 0x3d5:
             /* Data */
             if (jega->regs_index != RINVALID_INDEX) {
+                if ((jega->regs_index < 7) && (jega->regs[0x11] & 0x80))
+                    return;
+                if ((jega->regs_index == 7) && (jega->regs[0x11] & 0x80))
+                    val = (jega->regs[7] & ~0x10) | (val & 0x10);
+                /*
+                   Do not allow cursor updates if neither master nor slave is
+                   active - the AX Windows 3.0 386 Enhanced Mode DOS grabber
+                   relies on this for the cursor position to behave correctly.
+                 */
+                if ((jega->regs_index >= 0x0e) && (jega->regs_index <= 0x0f) && !(jega->regs[RMOD1] & 0x0c))
+                    return;
                 jega->regs[jega->regs_index] = val;
                 jega_log("JEGA Out %04X(%02X) %02Xh(%d) %04X:%04X\n", addr, jega->regs_index, val, val, cs >> 4, cpu_state.pc);
                 switch (jega->regs_index) {
                     case RMOD1:
                         /* if the value is changed */
-                        if (jega->is_vga) {
-                            if (val & 0x40)
-                                jega->vga.svga.render_override = NULL;
-                            else
-                                jega->vga.svga.render_override = jega_render_text;
-                        } else {
-                            if (val & 0x40)
-                                jega->ega.render_override = NULL;
-                            else
-                                jega->ega.render_override = jega_render_text;
+                        /*
+                           Do not allow override toggling unless it's on master and
+                           only override the text renderer - the AX Windows 3.0 386
+                           Enhanced Mode DOS grabber relies on this for the grabbing
+                           to behave correctly.
+                         */
+                        if (val & 0x08) {
+                            if (jega->is_vga) {
+                                if (val & 0x40)
+                                    jega->vga.svga.render_override = NULL;
+                                else
+                                    jega->vga.svga.render_override = jega_render_text;
+                            } else {
+                                if (val & 0x40)
+                                    jega->ega.render_override = NULL;
+                                else
+                                    jega->ega.render_override = jega_render_text;
+                            }
                         }
                         break;
                     case RDAGS:
